@@ -1,0 +1,29 @@
+{
+  "user": {
+    "name": "Andrew"
+  },
+  "workout": {
+    "workout_id": "andrew-ankle-rehab",
+    "title": "Andrew Ankle Rehab",
+    "frequency": "daily",
+    "times_per_day": 2,
+    "active": true,
+    "schedule_mode": "two_checkins_per_day",
+    "notes": "Each daily occurrence is a separate session with independent completion and logging."
+  },
+  "activities": [
+    {"activity_id":"ankle-alphabet","title":"Ankle Alphabet","order":1},
+    {"activity_id":"ankle-inversion","title":"Ankle Inversion","order":2},
+    {"activity_id":"ankle-eversion","title":"Ankle Eversion","order":3},
+    {"activity_id":"plantarflexion","title":"Plantarflexion","order":4},
+    {"activity_id":"dorsiflexion","title":"Dorsiflexion","order":5},
+    {"activity_id":"single-leg-stance","title":"Single-Leg Stance","order":6},
+    {"activity_id":"standing-calf-stretch","title":"Standing Calf Stretch","order":7}
+  ],
+  "source_assets": [
+    {"smart_capturer":"IMG_5873.jpeg","drive_file_id":"1ULQXitqtI-Dk-QlZqHCIu5f1LSzoF4m0"},
+    {"smart_capturer":"IMG_5874.jpeg","drive_file_id":"1zBXTxt-0g--DscRQHceinyl_QsAeMbg8"},
+    {"smart_capturer":"IMG_5875.jpeg","drive_file_id":"1gKdtgPC7BGYLkhQwpHwDzZ5340LRswlQ"}
+  ],
+  "prescription_status": "needs_source_verification"
+}
