@@ -1,0 +1,7 @@
+{
+  "activity_templates": ["activity_id","title","instructions","thumbnail_url","detail_image_urls","default_sets","default_reps","default_hold_seconds"],
+  "workout_templates": ["workout_id","title","activity_ids","notes"],
+  "user_workouts": ["user_id","workout_id","frequency","times_per_day","active"],
+  "workout_sessions": ["session_id","user_id","workout_id","scheduled_at","started_at","completed_at","status"],
+  "exercise_logs": ["session_id","activity_id","completed","sets_done","reps_done","hold_seconds","notes"]
+}
