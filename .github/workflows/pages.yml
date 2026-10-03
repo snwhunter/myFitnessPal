@@ -23,6 +23,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate workout state and source data
+        run: TZ=America/Los_Angeles node --test tests/*.test.mjs
+      - name: Install browser test dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --no-save --package-lock=false playwright@1.56.1
+          "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Check dashboard and workout interactions
+        env:
+          NODE_PATH: ${{ runner.temp }}/browser-tests/node_modules
+          BROWSER_ARTIFACTS: ${{ runner.temp }}/browser-artifacts
+        run: |
+          python3 -m http.server 8765 >/tmp/myfitnesspal-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          node tests/browser.cjs
+      - name: Save layout checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-layout
+          path: ${{ runner.temp }}/browser-artifacts
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
@@ -32,3 +57,4 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+

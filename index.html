@@ -1,124 +1,13 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <title>myFitnessPal Workout</title>
-  <style>
-    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
-    *{box-sizing:border-box} body{margin:0} button,input{font:inherit}
-    .app{max-width:720px;margin:auto;min-height:100vh;background:#fff}
-    header{position:sticky;top:0;z-index:5;background:#111827;color:white;padding:18px 18px 14px}
-    header h1{font-size:20px;margin:0 0 4px}.sub{font-size:13px;color:#d1d5db}
-    .progress{height:7px;background:#374151;border-radius:10px;overflow:hidden;margin-top:12px}
-    .progress>div{height:100%;background:#22c55e;width:0;transition:.2s}
-    main{padding:14px}.workout-title{display:flex;justify-content:space-between;align-items:end;margin-bottom:10px}
-    .workout-title h2{font-size:18px;margin:0}.count{font-size:13px;color:#6b7280}
-    .item{border:1px solid #e5e7eb;border-radius:14px;margin:10px 0;overflow:hidden;background:#fff}
-    .row{display:grid;grid-template-columns:36px 64px 1fr 28px;gap:10px;align-items:center;padding:10px;cursor:pointer}
-    .check{width:26px;height:26px;accent-color:#16a34a;cursor:pointer}
-    .thumb{width:64px;height:52px;border-radius:9px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);display:flex;align-items:center;justify-content:center;font-size:27px}
-    .name{font-weight:700}.meta{font-size:12px;color:#6b7280;margin-top:3px}.chev{font-size:20px;color:#9ca3af;transition:.2s}
-    .detail{display:none;border-top:1px solid #e5e7eb;padding:12px 14px 15px;background:#f9fafb}.item.open .detail{display:block}.item.open .chev{transform:rotate(180deg)}
-    .steps{margin:8px 0 0;padding-left:20px}.steps li{margin:7px 0;line-height:1.35}
-    .detail-image{height:140px;border-radius:12px;background:linear-gradient(135deg,#e0e7ff,#c7d2fe);display:flex;align-items:center;justify-content:center;font-size:52px;margin-top:12px}
-    .done .name{text-decoration:line-through;color:#6b7280}.done .thumb{opacity:.55}
-    .footer-note{text-align:center;color:#9ca3af;font-size:12px;padding:24px 12px}
-  </style>
-</head>
-<body>
-<div class="app">
-  <header>
-    <h1>myFitnessPal</h1>
-    <div class="sub" id="sub">Loading workout…</div>
-    <div class="progress"><div id="bar"></div></div>
-  </header>
-  <main>
-    <div class="workout-title"><div><h2 id="workoutTitle">Workout checklist</h2><div id="sessionLabel" class="count" style="margin-top:4px"></div></div><div id="count" class="count"></div></div>
-    <div id="list"></div>
-    <div class="footer-note" id="footerNote">Completion is saved on this device</div>
-  </main>
-</div>
-<script>
-const params=new URLSearchParams(location.search);
-const userParam=(params.get("user")||"").trim().toLowerCase();
-const sessionParam=Math.max(1,Number(params.get("session")||1));
-const userSources={
-  "andrew.hunter":"data/andrew-ankle-rehab.json"
-};
-
-let workout=[];
-let userName="";
-let workoutName="";
-let sessionCount=1;
-let session=sessionParam;
-let key="";
-let complete=new Set();
-const list=document.getElementById("list");
-
-function friendlyMeta(x){
-  return x.meta || x.prescription || "Tap for details";
-}
-function render(){
- list.innerHTML=workout.map(x=>`
- <section class="item ${complete.has(x.activity_id||x.id)?"done":""}" data-id="${x.activity_id||x.id}">
-   <div class="row">
-    <input class="check" type="checkbox" ${complete.has(x.activity_id||x.id)?"checked":""} aria-label="Complete ${x.title}">
-    <div class="thumb">${x.icon||"🦶"}</div>
-    <div><div class="name">${x.title}</div><div class="meta">${friendlyMeta(x)}</div></div>
-    <div class="chev">⌄</div>
-   </div>
-   <div class="detail">
-     <strong>Details</strong>
-     ${x.steps?.length ? `<ol class="steps">${x.steps.map(s=>`<li>${s}</li>`).join("")}</ol>` : `<p class="meta">Exercise details/images will come from the stored activity template.</p>`}
-     <div class="detail-image">${x.detail_icon||x.icon||"🦶"}</div>
-   </div>
- </section>`).join("");
- document.querySelectorAll(".item").forEach(el=>{
-   el.querySelector(".row").addEventListener("click",e=>{ if(e.target.matches("input"))return; el.classList.toggle("open"); });
-   el.querySelector(".check").addEventListener("change",e=>{
-     const id=el.dataset.id; e.target.checked?complete.add(id):complete.delete(id);
-     localStorage.setItem(key,JSON.stringify([...complete])); render();
-   });
- });
- document.getElementById("count").textContent=`${complete.size} / ${workout.length} complete`;
- document.getElementById("bar").style.width=(workout.length?complete.size/workout.length*100:0)+"%";
-}
-
-async function load(){
- if(!userParam || !userSources[userParam]){
-   document.getElementById("sub").textContent="Choose a user";
-   document.getElementById("workoutTitle").textContent="No workout loaded";
-   document.getElementById("sessionLabel").textContent='Try ?user=andrew.hunter';
-   document.getElementById("footerNote").textContent="User-specific workout prototype";
-   return;
- }
- try{
-   const response=await fetch(userSources[userParam],{cache:"no-store"});
-   if(!response.ok) throw new Error("Workout data not found");
-   const data=await response.json();
-   userName=data.user?.name||userParam;
-   workoutName=data.workout?.title||"Workout";
-   sessionCount=data.workout?.times_per_day||1;
-   session=Math.min(sessionParam,sessionCount);
-   workout=(data.activities||[]).sort((a,b)=>(a.order||0)-(b.order||0));
-   key=`myfitnesspal:${userParam}:${data.workout?.workout_id||"workout"}:session:${session}`;
-   complete=new Set(JSON.parse(localStorage.getItem(key)||"[]"));
-   document.title=`${userName} · ${workoutName}`;
-   document.getElementById("sub").textContent=`${userName} · Today's workout`;
-   document.getElementById("workoutTitle").textContent=workoutName;
-   document.getElementById("sessionLabel").innerHTML=sessionCount>1
-     ? `Session ${session} of ${sessionCount} · ${Array.from({length:sessionCount},(_,i)=>`<a href="?user=${encodeURIComponent(userParam)}&session=${i+1}" style="color:#6b7280">${i+1}</a>`).join(" / ")}`
-     : "";
-   document.getElementById("footerNote").textContent=`User: ${userParam} · completion saved separately for session ${session}`;
-   render();
- }catch(err){
-   document.getElementById("sub").textContent="Could not load workout";
-   document.getElementById("workoutTitle").textContent=err.message;
- }
-}
-load();
-</script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><title>myFitnessPal</title><link rel="stylesheet" href="styles.css"><script type="module" src="app.js"></script></head>
+<body><div class="app"><header><a class="brand" href="?">myFitnessPal</a><span id="userName"></span></header><main>
+<p id="message" role="status">Loading your dashboard…</p>
+<section id="dashboard" hidden aria-labelledby="dashboardTitle">
+<div class="heading"><div><p class="eyebrow">YOUR DASHBOARD</p><h1 id="dashboardTitle"></h1></div><span class="pill">Daily · 2 sessions</span></div>
+<section class="metrics" aria-label="Workout metrics"><div><strong id="todaySessions">0 / 2</strong><span>Today’s sessions</span></div><div><strong id="todayExercises">0 / 14</strong><span>Today’s exercises</span></div><div><strong id="weekSessions">0 / 14</strong><span>Past 7 days</span></div></section>
+<p id="saveNotice" class="muted">Progress is saved on this device.</p>
+<section class="sessions-section" aria-labelledby="sessionsTitle"><div class="heading"><h2 id="sessionsTitle">Sessions</h2><button id="todayButton" class="text-button">Today</button></div>
+<div class="date-nav"><button id="previousDate" class="nav-button" aria-label="Previous day">‹</button><div id="dateRoller" class="date-roller" aria-label="Choose a workout date"></div><button id="nextDate" class="nav-button" aria-label="Next day">›</button></div>
+<label class="date-picker">Jump to date <input id="datePicker" type="date"></label><h3 id="selectedDateLabel"></h3><div id="sessions"></div></section></section>
+<section id="workout" hidden aria-labelledby="workoutTitle"><button id="backButton" class="text-button">← Dashboard</button><div class="heading workout-heading"><div><p id="sessionLabel" class="eyebrow"></p><h1 id="workoutTitle"></h1></div><span id="count" class="muted" aria-live="polite"></span></div><div class="progress" role="progressbar" aria-label="Session completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar"></div></div><div id="list"></div></section>
+</main></div></body></html>

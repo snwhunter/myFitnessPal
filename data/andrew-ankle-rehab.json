@@ -1,6 +1,7 @@
 {
   "user": {
-    "name": "Andrew"
+    "name": "Andrew",
+    "user_id": "andrew.hunter"
   },
   "workout": {
     "workout_id": "andrew-ankle-rehab",
@@ -12,18 +13,181 @@
     "notes": "Each daily occurrence is a separate session with independent completion and logging."
   },
   "activities": [
-    {"activity_id":"ankle-alphabet","title":"Ankle Alphabet","order":1},
-    {"activity_id":"ankle-inversion","title":"Ankle Inversion","order":2},
-    {"activity_id":"ankle-eversion","title":"Ankle Eversion","order":3},
-    {"activity_id":"plantarflexion","title":"Plantarflexion","order":4},
-    {"activity_id":"dorsiflexion","title":"Dorsiflexion","order":5},
-    {"activity_id":"single-leg-stance","title":"Single-Leg Stance","order":6},
-    {"activity_id":"standing-calf-stretch","title":"Standing Calf Stretch","order":7}
+    {
+      "activity_id": "ankle-alphabet",
+      "title": "Ankle Alphabet",
+      "order": 1,
+      "sets": null,
+      "reps": null,
+      "hold_seconds": null,
+      "prescription": "A–Z once or twice per session",
+      "steps": [
+        "Sit comfortably in a chair, or lie down with your leg supported. Keep your knee relatively still.",
+        "Lift your foot slightly off the floor. Use your foot as a “pen” to slowly trace A through Z in the air.",
+        "Make the letters as large as comfortable, moving only your ankle and foot. Move slowly and deliberately.",
+        "If you experience pain, make the letters smaller or stay within a comfortable range of motion.",
+        "Perform A–Z once or twice each session. Repeat on the opposite side if instructed."
+      ],
+      "thumbnail": "assets/exercises/ankle-alphabet-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/ankle-alphabet.jpg",
+          "alt": "Original exercise directions for ankle alphabet"
+        }
+      ],
+      "purpose": "Improve ankle mobility, reduce stiffness, and promote circulation.",
+      "notes": "Focus on smooth, controlled movement in all directions: up, down, in, and out. The sheet says 1–3 times per day; the overall workout is scheduled twice daily.",
+      "source_file": "IMG_5873.jpeg"
+    },
+    {
+      "activity_id": "ankle-inversion",
+      "title": "Ankle Inversion with CLX",
+      "order": 2,
+      "sets": 3,
+      "reps": 10,
+      "hold_seconds": null,
+      "prescription": "3 sets · 10 reps",
+      "steps": [
+        "While seated, place one CLX loop on your foot, then cross your legs as shown in the illustration.",
+        "With your other leg, step on the CLX band and hold the other end.",
+        "Move your foot up and down as shown. Repeat for the specified number of reps."
+      ],
+      "thumbnail": "assets/exercises/ankle-inversion-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/ankle-inversion.jpg",
+          "alt": "Exercise sheet illustration: Ankle Inversion with CLX"
+        }
+      ],
+      "source_file": "IMG_5873.jpeg"
+    },
+    {
+      "activity_id": "ankle-eversion",
+      "title": "Resisted Ankle Eversion with Elastic Band",
+      "order": 3,
+      "sets": 3,
+      "reps": 10,
+      "hold_seconds": 5,
+      "prescription": "3 sets · 10 reps · hold 5 sec",
+      "steps": [
+        "While seated, attach an elastic band to your foot as pictured.",
+        "Draw your foot outward to the side. Keep your heel in contact with the floor the entire time.",
+        "Hold for 5 seconds, then return to the starting position. Repeat for the specified number of reps."
+      ],
+      "thumbnail": "assets/exercises/ankle-eversion-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/ankle-eversion.jpg",
+          "alt": "Exercise sheet illustration: Resisted Ankle Eversion with Elastic Band"
+        }
+      ],
+      "source_file": "IMG_5873.jpeg"
+    },
+    {
+      "activity_id": "plantarflexion",
+      "title": "Resisted Ankle Plantarflexion with Elastic Band — Seated",
+      "order": 4,
+      "sets": 3,
+      "reps": 10,
+      "hold_seconds": null,
+      "prescription": "3 sets · 10 reps",
+      "steps": [
+        "In a seated position, place an elastic band around your foot as shown.",
+        "Draw back on the elastic band so your foot raises toward the ceiling, keeping your heel on the ground.",
+        "Press your foot downward and forward, exaggerating the lead with your big toe.",
+        "Repeat for the specified number of reps."
+      ],
+      "thumbnail": "assets/exercises/plantarflexion-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/plantarflexion.jpg",
+          "alt": "Exercise sheet illustration: Resisted Ankle Plantarflexion with Elastic Band — Seated"
+        }
+      ],
+      "source_file": "IMG_5873.jpeg"
+    },
+    {
+      "activity_id": "dorsiflexion",
+      "title": "Resisted Ankle Dorsiflexion with Elastic Band",
+      "order": 5,
+      "sets": 3,
+      "reps": 10,
+      "hold_seconds": 5,
+      "prescription": "3 sets · 10 reps · hold 5 sec",
+      "steps": [
+        "Start seated with your unaffected leg bent and an elastic band attached to your affected foot.",
+        "Draw your foot upward as pictured and hold for 5 seconds.",
+        "Return to the starting position. Keep your heel in contact with the floor the entire time."
+      ],
+      "thumbnail": "assets/exercises/dorsiflexion-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/dorsiflexion.jpg",
+          "alt": "Exercise sheet illustration: Resisted Ankle Dorsiflexion with Elastic Band"
+        }
+      ],
+      "source_file": "IMG_5875.jpeg"
+    },
+    {
+      "activity_id": "single-leg-stance",
+      "title": "Single-Leg Stance",
+      "order": 6,
+      "sets": 3,
+      "reps": 10,
+      "hold_seconds": 15,
+      "prescription": "3 sets · 10 reps · hold 15 sec",
+      "steps": [
+        "Stand upright with your feet shoulder width apart. If needed, rest or hover your hands on a chair or sturdy object in front of you.",
+        "Slowly bend your knee to 90 degrees as shown, balancing on the other leg.",
+        "Hold your knee bent for 15 seconds, then slowly return to the starting position."
+      ],
+      "thumbnail": "assets/exercises/single-leg-stance-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/single-leg-stance.jpg",
+          "alt": "Exercise sheet illustration: Single-Leg Stance"
+        }
+      ],
+      "source_file": "IMG_5875.jpeg"
+    },
+    {
+      "activity_id": "standing-calf-stretch",
+      "title": "Standing Calf Stretch (Gastroc)",
+      "order": 7,
+      "sets": null,
+      "reps": 3,
+      "hold_seconds": 30,
+      "prescription": "3 reps · hold 30 sec",
+      "steps": [
+        "Stand in front of a wall or chair and place your hands on it. Lean slightly forward.",
+        "Step forward with your non-involved leg. Keep toes and feet pointing forward with a slight bend in your front knee.",
+        "Extend your involved leg back. Do not bend your back knee.",
+        "Lean slightly forward and hold for 30 seconds. You should feel a stretch in your back leg.",
+        "Repeat for 3 reps."
+      ],
+      "thumbnail": "assets/exercises/standing-calf-stretch-thumb.jpg",
+      "images": [
+        {
+          "src": "assets/exercises/standing-calf-stretch.jpg",
+          "alt": "Exercise sheet illustration: Standing Calf Stretch (Gastroc)"
+        }
+      ],
+      "source_file": "IMG_5875.jpeg"
+    }
   ],
   "source_assets": [
-    {"smart_capturer":"IMG_5873.jpeg","drive_file_id":"1ULQXitqtI-Dk-QlZqHCIu5f1LSzoF4m0"},
-    {"smart_capturer":"IMG_5874.jpeg","drive_file_id":"1zBXTxt-0g--DscRQHceinyl_QsAeMbg8"},
-    {"smart_capturer":"IMG_5875.jpeg","drive_file_id":"1gKdtgPC7BGYLkhQwpHwDzZ5340LRswlQ"}
+    {
+      "smart_capturer": "IMG_5873.jpeg",
+      "drive_file_id": "1ULQXitqtI-Dk-QlZqHCIu5f1LSzoF4m0"
+    },
+    {
+      "smart_capturer": "IMG_5874.jpeg",
+      "drive_file_id": "1zBXTxt-0g--DscRQHceinyl_QsAeMbg8"
+    },
+    {
+      "smart_capturer": "IMG_5875.jpeg",
+      "drive_file_id": "1gKdtgPC7BGYLkhQwpHwDzZ5340LRswlQ"
+    }
   ],
-  "prescription_status": "needs_source_verification"
+  "prescription_status": "verified_from_uploaded_source_images"
 }
