@@ -31,36 +31,49 @@
 <div class="app">
   <header>
     <h1>myFitnessPal</h1>
-    <div class="sub">Today's workout · Full Body A</div>
+    <div class="sub" id="sub">Loading workout…</div>
     <div class="progress"><div id="bar"></div></div>
   </header>
   <main>
-    <div class="workout-title"><h2>Workout checklist</h2><div id="count" class="count"></div></div>
+    <div class="workout-title"><div><h2 id="workoutTitle">Workout checklist</h2><div id="sessionLabel" class="count" style="margin-top:4px"></div></div><div id="count" class="count"></div></div>
     <div id="list"></div>
-    <div class="footer-note">Prototype v0.1 · completion is saved on this device</div>
+    <div class="footer-note" id="footerNote">Completion is saved on this device</div>
   </main>
 </div>
 <script>
-const workout=[
- {id:"warmup",title:"Dynamic warm-up",meta:"5 min",icon:"🏃",steps:["Easy movement for 2 minutes","10 arm circles each direction","10 walking lunges","10 bodyweight squats"],image:"🤸"},
- {id:"squat",title:"Goblet squat",meta:"3 sets × 10 reps",icon:"🏋️",steps:["Hold weight close to chest","Feet about shoulder width","Sit hips down and back","Drive through mid-foot to stand"],image:"🦵"},
- {id:"pushup",title:"Push-ups",meta:"3 sets × 8–12 reps",icon:"💪",steps:["Hands slightly wider than shoulders","Keep body in one straight line","Lower chest under control","Press back to full extension"],image:"⬇️"},
- {id:"row",title:"One-arm dumbbell row",meta:"3 sets × 10 / side",icon:"🏋️",steps:["Brace opposite hand on bench","Keep spine neutral","Pull elbow toward hip","Lower slowly and repeat"],image:"↩️"},
- {id:"plank",title:"Front plank",meta:"3 × 30 sec",icon:"⏱️",steps:["Elbows under shoulders","Squeeze glutes","Brace abdomen","Keep head, hips and heels aligned"],image:"📏"}
-];
-const key="myfitnesspal-demo-complete";
-let complete=new Set(JSON.parse(localStorage.getItem(key)||"[]"));
+const params=new URLSearchParams(location.search);
+const userParam=(params.get("user")||"").trim().toLowerCase();
+const sessionParam=Math.max(1,Number(params.get("session")||1));
+const userSources={
+  "andrew.hunter":"data/andrew-ankle-rehab.json"
+};
+
+let workout=[];
+let userName="";
+let workoutName="";
+let sessionCount=1;
+let session=sessionParam;
+let key="";
+let complete=new Set();
 const list=document.getElementById("list");
+
+function friendlyMeta(x){
+  return x.meta || x.prescription || "Tap for details";
+}
 function render(){
  list.innerHTML=workout.map(x=>`
- <section class="item ${complete.has(x.id)?"done":""}" data-id="${x.id}">
+ <section class="item ${complete.has(x.activity_id||x.id)?"done":""}" data-id="${x.activity_id||x.id}">
    <div class="row">
-    <input class="check" type="checkbox" ${complete.has(x.id)?"checked":""} aria-label="Complete ${x.title}">
-    <div class="thumb">${x.icon}</div>
-    <div><div class="name">${x.title}</div><div class="meta">${x.meta}</div></div>
+    <input class="check" type="checkbox" ${complete.has(x.activity_id||x.id)?"checked":""} aria-label="Complete ${x.title}">
+    <div class="thumb">${x.icon||"🦶"}</div>
+    <div><div class="name">${x.title}</div><div class="meta">${friendlyMeta(x)}</div></div>
     <div class="chev">⌄</div>
    </div>
-   <div class="detail"><strong>Steps</strong><ol class="steps">${x.steps.map(s=>`<li>${s}</li>`).join("")}</ol><div class="detail-image">${x.image}</div></div>
+   <div class="detail">
+     <strong>Details</strong>
+     ${x.steps?.length ? `<ol class="steps">${x.steps.map(s=>`<li>${s}</li>`).join("")}</ol>` : `<p class="meta">Exercise details/images will come from the stored activity template.</p>`}
+     <div class="detail-image">${x.detail_icon||x.icon||"🦶"}</div>
+   </div>
  </section>`).join("");
  document.querySelectorAll(".item").forEach(el=>{
    el.querySelector(".row").addEventListener("click",e=>{ if(e.target.matches("input"))return; el.classList.toggle("open"); });
@@ -70,9 +83,42 @@ function render(){
    });
  });
  document.getElementById("count").textContent=`${complete.size} / ${workout.length} complete`;
- document.getElementById("bar").style.width=(complete.size/workout.length*100)+"%";
+ document.getElementById("bar").style.width=(workout.length?complete.size/workout.length*100:0)+"%";
 }
-render();
+
+async function load(){
+ if(!userParam || !userSources[userParam]){
+   document.getElementById("sub").textContent="Choose a user";
+   document.getElementById("workoutTitle").textContent="No workout loaded";
+   document.getElementById("sessionLabel").textContent='Try ?user=andrew.hunter';
+   document.getElementById("footerNote").textContent="User-specific workout prototype";
+   return;
+ }
+ try{
+   const response=await fetch(userSources[userParam],{cache:"no-store"});
+   if(!response.ok) throw new Error("Workout data not found");
+   const data=await response.json();
+   userName=data.user?.name||userParam;
+   workoutName=data.workout?.title||"Workout";
+   sessionCount=data.workout?.times_per_day||1;
+   session=Math.min(sessionParam,sessionCount);
+   workout=(data.activities||[]).sort((a,b)=>(a.order||0)-(b.order||0));
+   key=`myfitnesspal:${userParam}:${data.workout?.workout_id||"workout"}:session:${session}`;
+   complete=new Set(JSON.parse(localStorage.getItem(key)||"[]"));
+   document.title=`${userName} · ${workoutName}`;
+   document.getElementById("sub").textContent=`${userName} · Today's workout`;
+   document.getElementById("workoutTitle").textContent=workoutName;
+   document.getElementById("sessionLabel").innerHTML=sessionCount>1
+     ? `Session ${session} of ${sessionCount} · ${Array.from({length:sessionCount},(_,i)=>`<a href="?user=${encodeURIComponent(userParam)}&session=${i+1}" style="color:#6b7280">${i+1}</a>`).join(" / ")}`
+     : "";
+   document.getElementById("footerNote").textContent=`User: ${userParam} · completion saved separately for session ${session}`;
+   render();
+ }catch(err){
+   document.getElementById("sub").textContent="Could not load workout";
+   document.getElementById("workoutTitle").textContent=err.message;
+ }
+}
+load();
 </script>
 </body>
 </html>
