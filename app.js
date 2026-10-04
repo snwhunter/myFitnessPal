@@ -1,37 +1,48 @@
-import {dateKey, parseDate, shiftDate, storageKey, readCompletion} from './workout-state.js';
-const sources = {'andrew.hunter': 'data/andrew-ankle-rehab.json'};
+import {dateKey, parseDate, shiftDate} from './workout-state.js';
+
+const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
+const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
+const TIMES_PER_DAY = 2;
+
 const params = new URLSearchParams(location.search);
 const user = (params.get('user') || '').trim().toLowerCase();
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let data, ids, selectedDate, selectedSession, complete;
-let storage, storageAvailable = true;
-try { storage = window.localStorage; storage.setItem('myfitnesspal:storage-test', '1'); storage.removeItem('myfitnesspal:storage-test'); }
-catch { storageAvailable = false; }
-const memory = new Map();
-const progressStorage = {
-  getItem(key) { if (memory.has(key)) return memory.get(key); try { return storage?.getItem(key) ?? null; } catch { return null; } },
-  setItem(key, value) { memory.set(key, value); try { if (!storageAvailable) throw new Error(); storage.setItem(key, value); } catch { storageAvailable = false; showStorageNotice(); } }
-};
-function showStorageNotice() { $('saveNotice').textContent = storageAvailable ? 'Progress is saved on this device.' : 'Device storage is unavailable. Progress lasts only while this page is open.'; }
-function key(date, session) { return storageKey(user, data.workout.workout_id, date, session); }
-function read(date, session) { return readCompletion(progressStorage, key(date, session), ids); }
-function formatDate(date, options) { return parseDate(date).toLocaleDateString(undefined, options); }
-function refreshMetrics() {
-  const today = dateKey();
-  let sessions = 0, exercises = 0, week = 0;
-  for (let i = 1; i <= data.workout.times_per_day; i++) {
-    const count = read(today, i).size;
-    exercises += count;
-    if (count === ids.length && ids.length) sessions++;
-  }
-  for (let day = -6; day <= 0; day++) for (let i = 1; i <= data.workout.times_per_day; i++) {
-    if (ids.length && read(shiftDate(today, day), i).size === ids.length) week++;
-  }
-  $('todaySessions').textContent = `${sessions} / ${data.workout.times_per_day}`;
-  $('todayExercises').textContent = `${exercises} / ${ids.length * data.workout.times_per_day}`;
-  $('weekSessions').textContent = `${week} / ${7 * data.workout.times_per_day}`;
+
+let userData;
+let dashboardData;
+let selectedDate;
+let selectedSessionNumber;
+let selectedSession;
+
+function formatDate(date, options) {
+  return parseDate(date).toLocaleDateString(undefined, options);
 }
+
+async function apiGet(action, query = {}) {
+  const url = new URL(API_URL);
+  url.searchParams.set('action', action);
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
+  });
+  const response = await fetch(url, {cache: 'no-store'});
+  if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
+  return payload.data;
+}
+
+async function apiPost(action, body = {}) {
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({action, ...body})
+  });
+  if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
+  return payload.data;
+}
+
 function updateUrl(session = null) {
   const url = new URL(location.href);
   url.searchParams.set('user', user);
@@ -39,108 +50,282 @@ function updateUrl(session = null) {
   session ? url.searchParams.set('session', session) : url.searchParams.delete('session');
   history.replaceState(null, '', url);
 }
-function renderDashboard() {
-  refreshMetrics();
+
+function sessionsForSelectedDate() {
+  return dashboardData?.sessions || [];
+}
+
+function sessionForSlot(slot) {
+  return sessionsForSelectedDate()[slot - 1] || null;
+}
+
+function countCompleted(session) {
+  return (session?.items || []).filter(item => item.completed === true || String(item.completed).toLowerCase() === 'true').length;
+}
+
+function sessionDone(session) {
+  return !!session && session.status === 'completed';
+}
+
+async function loadDashboard(date = selectedDate) {
+  dashboardData = await apiGet('dashboard', {user, date});
+  return dashboardData;
+}
+
+async function refreshMetrics() {
+  const today = dateKey();
+  const todayData = selectedDate === today ? dashboardData : await apiGet('dashboard', {user, date: today});
+  const todaySessions = todayData.sessions || [];
+  const totalExercises = todaySessions.reduce((sum, session) => sum + (session.items?.length || 0), 0);
+  const completedExercises = todaySessions.reduce((sum, session) => sum + countCompleted(session), 0);
+  const completedSessions = todaySessions.filter(sessionDone).length;
+
+  let weekCompleted = 0;
+  try {
+    const all = await apiGet('sessions', {user});
+    const weekDates = new Set(Array.from({length: 7}, (_, i) => shiftDate(today, -i)));
+    weekCompleted = (all.sessions || []).filter(session =>
+      weekDates.has(String(session.session_date).slice(0, 10)) && session.status === 'completed'
+    ).length;
+  } catch {
+    weekCompleted = completedSessions;
+  }
+
+  $('todaySessions').textContent = `${completedSessions} / ${TIMES_PER_DAY}`;
+  $('todayExercises').textContent = `${completedExercises} / ${totalExercises || 14}`;
+  $('weekSessions').textContent = `${weekCompleted} / ${7 * TIMES_PER_DAY}`;
+}
+
+async function renderDashboard() {
+  await refreshMetrics();
+
   $('selectedDateLabel').textContent = formatDate(selectedDate, {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   $('datePicker').value = selectedDate;
+
   $('dateRoller').innerHTML = Array.from({length:15}, (_, i) => {
     const date = shiftDate(selectedDate, i - 7);
     return `<button class="date-button ${date === dateKey() ? 'today' : ''}" data-date="${date}" aria-pressed="${date === selectedDate}" aria-label="${esc(formatDate(date, {weekday:'long',month:'long',day:'numeric',year:'numeric'}))}"><span>${esc(formatDate(date, {weekday:'short'}))}</span><strong>${parseDate(date).getDate()}</strong><span>${date === dateKey() ? 'Today' : esc(formatDate(date, {month:'short'}))}</span></button>`;
   }).join('');
-  $('dateRoller').querySelectorAll('button').forEach(button => button.addEventListener('click', () => chooseDate(button.dataset.date)));
+
+  $('dateRoller').querySelectorAll('button').forEach(button =>
+    button.addEventListener('click', () => chooseDate(button.dataset.date))
+  );
+
   requestAnimationFrame(() => {
     const selected = $('dateRoller').querySelector('[aria-pressed=true]');
-    $('dateRoller').scrollLeft = selected.offsetLeft - ($('dateRoller').clientWidth - selected.clientWidth) / 2;
+    if (selected) $('dateRoller').scrollLeft = selected.offsetLeft - ($('dateRoller').clientWidth - selected.clientWidth) / 2;
   });
-  $('sessions').innerHTML = Array.from({length:data.workout.times_per_day}, (_, i) => {
-    const session = i + 1, count = read(selectedDate, session).size, done = ids.length > 0 && count === ids.length;
-    return `<button class="session-card ${done ? 'complete' : ''}" data-session="${session}"><span class="session-icon" aria-hidden="true">${done ? '✓' : '›'}</span><span class="session-copy"><strong>Session ${session}</strong><span>${esc(data.workout.title)} · ${count} / ${ids.length} complete</span></span><span class="session-status">${done ? 'Complete' : count ? 'Continue' : 'Start'}</span></button>`;
+
+  $('sessions').innerHTML = Array.from({length: TIMES_PER_DAY}, (_, i) => {
+    const slot = i + 1;
+    const session = sessionForSlot(slot);
+    const count = countCompleted(session);
+    const total = session?.items?.length || 7;
+    const done = sessionDone(session);
+    const status = done ? 'Complete' : count ? 'Continue' : 'Start';
+    return `<button class="session-card ${done ? 'complete' : ''}" data-session="${slot}"><span class="session-icon" aria-hidden="true">${done ? '✓' : '›'}</span><span class="session-copy"><strong>Session ${slot}</strong><span>Andrew Ankle Rehab · ${count} / ${total} complete</span></span><span class="session-status">${status}</span></button>`;
   }).join('');
-  $('sessions').querySelectorAll('button').forEach(button => button.addEventListener('click', () => openSession(Number(button.dataset.session))));
+
+  $('sessions').querySelectorAll('button').forEach(button =>
+    button.addEventListener('click', () => openSession(Number(button.dataset.session)))
+  );
 }
-function chooseDate(date) {
+
+async function chooseDate(date) {
   if (!parseDate(date)) return;
   selectedDate = date;
+  $('message').hidden = false;
+  $('message').textContent = 'Loading workouts…';
+  await loadDashboard(selectedDate);
   updateUrl();
-  renderDashboard();
+  await renderDashboard();
+  $('message').hidden = true;
 }
-function refreshChecklist() {
-  $('count').textContent = `${complete.size} / ${ids.length} complete`;
-  const percentage = ids.length ? Math.round(100 * complete.size / ids.length) : 0;
-  $('bar').style.width = `${percentage}%`;
-  $('bar').parentElement.setAttribute('aria-valuenow', percentage);
-  for (const item of $('list').querySelectorAll('.item')) item.classList.toggle('done', complete.has(item.dataset.id));
+
+async function ensureSession(slot) {
+  let sessions = sessionsForSelectedDate();
+
+  while (sessions.length < slot) {
+    await apiPost('createSession', {
+      user_id: userData.user_id,
+      template_id: DEFAULT_TEMPLATE_ID,
+      session_date: selectedDate
+    });
+    await loadDashboard(selectedDate);
+    sessions = sessionsForSelectedDate();
+  }
+
+  return sessions[slot - 1];
 }
-function openSession(session) {
-  selectedSession = session;
-  complete = read(selectedDate, session);
+
+function itemPrescription(item) {
+  const p = item.prescription || {};
+  if (p.notes) return p.notes;
+  const parts = [];
+  if (p.sets) parts.push(`${p.sets} sets`);
+  if (p.reps) parts.push(`${p.reps} reps`);
+  if (p.duration_sec) parts.push(`${p.duration_sec} sec`);
+  return parts.join(' · ');
+}
+
+function itemImages(item) {
+  return (item.steps || [])
+    .filter(step => step.image_url)
+    .map(step => ({src: step.image_url, alt: `${item.title} exercise illustration`}));
+}
+
+function renderWorkout() {
+  const items = selectedSession.items || [];
+  const complete = countCompleted(selectedSession);
+
   $('dashboard').hidden = true;
   $('workout').hidden = false;
-  $('workoutTitle').textContent = data.workout.title;
-  $('sessionLabel').textContent = `${formatDate(selectedDate, {month:'short',day:'numeric',year:'numeric'})} · Session ${session} of ${data.workout.times_per_day}`;
-  $('list').innerHTML = data.activities.map(activity => `<section class="item" data-id="${esc(activity.activity_id)}"><div class="row"><label class="check-label"><input class="check" type="checkbox" ${complete.has(activity.activity_id) ? 'checked' : ''}><span class="sr-only">Complete ${esc(activity.title)}</span></label><details class="exercise"><summary>${activity.thumbnail ? `<img class="thumb" src="${esc(activity.thumbnail)}" alt="" loading="lazy">` : '<span class="thumb" aria-hidden="true">🦶</span>'}<span><span class="name">${esc(activity.title)}</span><span class="meta">${esc(activity.prescription)}</span></span><span class="chev" aria-hidden="true">⌄</span></summary><div class="detail">${activity.purpose ? `<p>${esc(activity.purpose)}</p>` : ''}<strong>${esc(activity.prescription)}</strong><ol class="steps">${activity.steps.map(step => `<li>${esc(step)}</li>`).join('')}</ol>${activity.notes ? `<p>${esc(activity.notes)}</p>` : ''}${(activity.images || []).map(img => `<img class="detail-image" src="${esc(img.src)}" alt="${esc(img.alt)}" loading="lazy">`).join('')}<p class="source-label">From Andrew’s exercise sheet</p></div></details></div></section>`).join('');
-  $('list').querySelectorAll('input').forEach(input => input.addEventListener('change', () => {
-    const id = input.closest('.item').dataset.id;
-    input.checked ? complete.add(id) : complete.delete(id);
-    progressStorage.setItem(key(selectedDate, selectedSession), JSON.stringify([...complete]));
-    refreshChecklist();
+  $('workoutTitle').textContent = selectedSession.template_id === DEFAULT_TEMPLATE_ID ? 'Andrew Ankle Rehab' : 'Workout';
+  $('sessionLabel').textContent = `${formatDate(selectedDate, {month:'short',day:'numeric',year:'numeric'})} · Session ${selectedSessionNumber} of ${TIMES_PER_DAY}`;
+
+  $('list').innerHTML = items.map(item => {
+    const checked = item.completed === true || String(item.completed).toLowerCase() === 'true';
+    const exercise = item.exercise || {};
+    const prescription = itemPrescription(item);
+    const steps = item.steps || [];
+    const images = itemImages(item);
+
+    return `<section class="item ${checked ? 'done' : ''}" data-id="${esc(item.session_item_id)}">
+      <div class="row">
+        <label class="check-label">
+          <input class="check" type="checkbox" ${checked ? 'checked' : ''}>
+          <span class="sr-only">Complete ${esc(item.title)}</span>
+        </label>
+        <details class="exercise">
+          <summary>
+            ${item.thumbnail_url ? `<img class="thumb" src="${esc(item.thumbnail_url)}" alt="" loading="lazy">` : '<span class="thumb" aria-hidden="true">🦶</span>'}
+            <span><span class="name">${esc(item.title)}</span><span class="meta">${esc(prescription)}</span></span>
+            <span class="chev" aria-hidden="true">⌄</span>
+          </summary>
+          <div class="detail">
+            ${exercise.summary ? `<p>${esc(exercise.summary)}</p>` : ''}
+            ${prescription ? `<strong>${esc(prescription)}</strong>` : ''}
+            <ol class="steps">${steps.map(step => `<li>${esc(step.instruction)}</li>`).join('')}</ol>
+            ${exercise.notes ? `<p>${esc(exercise.notes)}</p>` : ''}
+            ${images.map(img => `<img class="detail-image" src="${esc(img.src)}" alt="${esc(img.alt)}" loading="lazy">`).join('')}
+            <p class="source-label">From Andrew’s exercise sheet</p>
+          </div>
+        </details>
+      </div>
+    </section>`;
+  }).join('');
+
+  $('list').querySelectorAll('input').forEach(input => input.addEventListener('change', async () => {
+    const row = input.closest('.item');
+    input.disabled = true;
+    try {
+      selectedSession = await apiPost('checkItem', {
+        session_item_id: row.dataset.id,
+        completed: input.checked
+      });
+      refreshChecklist();
+
+      if (selectedSession.progress?.percent === 100 && selectedSession.status !== 'completed') {
+        selectedSession = await apiPost('completeSession', {session_id: selectedSession.session_id});
+        refreshChecklist();
+      }
+    } catch (error) {
+      input.checked = !input.checked;
+      $('message').hidden = false;
+      $('message').textContent = error.message;
+    } finally {
+      input.disabled = false;
+    }
   }));
+
   refreshChecklist();
-  updateUrl(session);
+  updateUrl(selectedSessionNumber);
   window.scrollTo(0, 0);
 }
-function showDashboard() {
+
+function refreshChecklist() {
+  const items = selectedSession?.items || [];
+  const complete = countCompleted(selectedSession);
+  const percentage = items.length ? Math.round(100 * complete / items.length) : 0;
+  $('count').textContent = `${complete} / ${items.length} complete`;
+  $('bar').style.width = `${percentage}%`;
+  $('bar').parentElement.setAttribute('aria-valuenow', percentage);
+
+  for (const item of $('list').querySelectorAll('.item')) {
+    const record = items.find(value => value.session_item_id === item.dataset.id);
+    const done = !!record && (record.completed === true || String(record.completed).toLowerCase() === 'true');
+    item.classList.toggle('done', done);
+    const checkbox = item.querySelector('input');
+    if (checkbox) checkbox.checked = done;
+  }
+}
+
+async function openSession(slot) {
+  selectedSessionNumber = slot;
+  $('message').hidden = false;
+  $('message').textContent = 'Loading session…';
+
+  try {
+    selectedSession = await ensureSession(slot);
+
+    if (selectedSession.status === 'scheduled') {
+      selectedSession = await apiPost('startSession', {session_id: selectedSession.session_id});
+    }
+
+    renderWorkout();
+    $('message').hidden = true;
+  } catch (error) {
+    $('message').textContent = error.message;
+  }
+}
+
+async function showDashboard() {
   $('workout').hidden = true;
   $('dashboard').hidden = false;
+  $('message').hidden = false;
+  $('message').textContent = 'Refreshing workouts…';
+  await loadDashboard(selectedDate);
   updateUrl();
-  renderDashboard();
+  await renderDashboard();
+  $('message').hidden = true;
   window.scrollTo(0, 0);
 }
+
 async function load() {
-  if (!sources[user]) {
+  if (!user) {
     $('message').innerHTML = 'Choose a user to view their dashboard. <a href="?user=andrew.hunter">Open Andrew’s dashboard</a>';
     return;
   }
+
   try {
-    const response = await fetch(sources[user], {cache:'no-store'});
-    if (!response.ok) throw new Error('Workout data is unavailable.');
-    data = await response.json();
-    data.activities.sort((a,b) => a.order - b.order);
-    ids = data.activities.map(activity => activity.activity_id);
+    userData = await apiGet('user', {user});
     selectedDate = parseDate(params.get('date')) ? params.get('date') : dateKey();
-    // Retain undated prototype progress once, on the upgrade day only.
-    for (let session = 1; session <= data.workout.times_per_day; session++) {
-      const legacyKey = `myfitnesspal:${user}:${data.workout.workout_id}:session:${session}`;
-      const migrationKey = `${legacyKey}:migrated-to-date`;
-      const legacy = progressStorage.getItem(legacyKey);
-      if (legacy && !progressStorage.getItem(migrationKey)) {
-        if (!progressStorage.getItem(key(dateKey(), session))) progressStorage.setItem(key(dateKey(), session), JSON.stringify([...readCompletion(progressStorage, legacyKey, ids)]));
-        progressStorage.setItem(migrationKey, dateKey());
-      }
-    }
-    $('userName').textContent = data.user.name;
-    $('dashboardTitle').textContent = `${data.user.name}’s workouts`;
-    document.querySelector('.pill').textContent = `Daily · ${data.workout.times_per_day} sessions`;
-    document.title = `${data.user.name} · myFitnessPal`;
-    $('message').hidden = true;
-    showStorageNotice();
+    await loadDashboard(selectedDate);
+
+    $('userName').textContent = userData.display_name;
+    $('dashboardTitle').textContent = `${userData.display_name}’s workouts`;
+    document.querySelector('.pill').textContent = `Daily · ${TIMES_PER_DAY} sessions`;
+    document.title = `${userData.display_name} · myFitnessPal`;
+    $('saveNotice').textContent = 'Progress is saved to the workout backend.';
+
     $('todayButton').addEventListener('click', () => chooseDate(dateKey()));
     $('previousDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, -1)));
     $('nextDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, 1)));
     $('datePicker').addEventListener('change', event => chooseDate(event.target.value));
     $('backButton').addEventListener('click', showDashboard);
-    window.addEventListener('storage', () => {
-      memory.clear();
-      if (!$('dashboard').hidden) renderDashboard();
-      else {
-        complete = read(selectedDate, selectedSession);
-        $('list').querySelectorAll('input').forEach(input => { input.checked = complete.has(input.closest('.item').dataset.id); });
-        refreshChecklist();
-      }
-    });
-    showDashboard();
+
+    $('message').hidden = true;
+    $('dashboard').hidden = false;
+    await renderDashboard();
+
     const session = Number(params.get('session'));
-    if (Number.isInteger(session) && session >= 1 && session <= data.workout.times_per_day) openSession(session);
-  } catch (error) { $('message').textContent = `${error.message} Please reload to try again.`; }
+    if (Number.isInteger(session) && session >= 1 && session <= TIMES_PER_DAY) {
+      await openSession(session);
+    }
+  } catch (error) {
+    $('message').hidden = false;
+    $('message').textContent = `${error.message} Please reload to try again.`;
+  }
 }
+
 load();
