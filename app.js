@@ -1,12 +1,15 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
+const APP_VERSION = '0.3.1';
+
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
 const TIMES_PER_DAY = 2;
 
 const params = new URLSearchParams(location.search);
 const user = (params.get('user') || '').trim().toLowerCase();
 const $ = id => document.getElementById(id);
+$('appVersion').textContent = `v${APP_VERSION}`;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let userData;
@@ -14,9 +17,69 @@ let dashboardData;
 let selectedDate;
 let selectedSessionNumber;
 let selectedSession;
+let openingSession = false;
+let historyRequest;
+let metricsVersion = 0;
 
 function formatDate(date, options) {
   return parseDate(date).toLocaleDateString(undefined, options);
+}
+
+const CALL_LOG_KEY = `myfitnesspal:api-log:${user || 'anonymous'}`;
+const MAX_CALL_LOGS = 200;
+let callLogs = [];
+try {
+  const saved = JSON.parse(sessionStorage.getItem(CALL_LOG_KEY) || '[]');
+  if (Array.isArray(saved)) callLogs = saved.slice(-MAX_CALL_LOGS);
+} catch { /* Logging also works when browser storage is unavailable. */ }
+let callSequence = 0;
+
+function saveCallLogs() {
+  try { sessionStorage.setItem(CALL_LOG_KEY, JSON.stringify(callLogs)); } catch {}
+}
+
+// Inspect or download timings from the browser console; no workout payloads are logged.
+window.myFitnessPalLog = {
+  entries: () => callLogs.map(entry => ({...entry})),
+  table: () => console.table(callLogs),
+  clear: () => { callLogs = []; saveCallLogs(); },
+  download: () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(callLogs, null, 2)], {type: 'application/json'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'myfitnesspal-call-log.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+};
+
+async function apiRequest(action, method, url, options) {
+  const started = performance.now();
+  const entry = {
+    id: `${Date.now()}-${++callSequence}`,
+    action, method, version: APP_VERSION, startedAt: new Date().toISOString(), outcome: 'pending'
+  };
+  callLogs.push(entry);
+  callLogs = callLogs.slice(-MAX_CALL_LOGS);
+  saveCallLogs();
+  console.debug('[myFitnessPal API] start', {...entry});
+  try {
+    const response = await fetch(url, options);
+    entry.status = response.status;
+    if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
+    entry.outcome = 'success';
+    return payload.data;
+  } catch (error) {
+    entry.outcome = 'error';
+    throw error;
+  } finally {
+    entry.finishedAt = new Date().toISOString();
+    entry.durationMs = Math.round(performance.now() - started);
+    saveCallLogs();
+    console.debug('[myFitnessPal API] end', {...entry});
+  }
 }
 
 async function apiGet(action, query = {}) {
@@ -25,22 +88,16 @@ async function apiGet(action, query = {}) {
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
   });
-  const response = await fetch(url, {cache: 'no-store'});
-  if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
-  const payload = await response.json();
-  if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
-  return payload.data;
+  return apiRequest(action, 'GET', url, {cache: 'no-store'});
 }
 
 async function apiPost(action, body = {}) {
-  const response = await fetch(API_URL, {
+  const data = await apiRequest(action, 'POST', API_URL, {
     method: 'POST',
     body: JSON.stringify({action, ...body})
   });
-  if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
-  const payload = await response.json();
-  if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
-  return payload.data;
+  historyRequest = null;
+  return data;
 }
 
 function updateUrl(session = null) {
@@ -73,7 +130,14 @@ async function loadDashboard(date = selectedDate) {
 }
 
 async function refreshMetrics() {
+  const version = ++metricsVersion;
   const today = dateKey();
+  const allRequest = historyRequest ||= apiGet('sessions', {user}).catch(error => {
+    historyRequest = null;
+    throw error;
+  });
+  // Attach a handler immediately while today's data loads.
+  const historyResult = allRequest.then(data => ({data}), error => ({error}));
   const todayData = selectedDate === today ? dashboardData : await apiGet('dashboard', {user, date: today});
   const todaySessions = todayData.sessions || [];
   const totalExercises = todaySessions.reduce((sum, session) => sum + (session.items?.length || 0), 0);
@@ -82,7 +146,9 @@ async function refreshMetrics() {
 
   let weekCompleted = 0;
   try {
-    const all = await apiGet('sessions', {user});
+    const result = await historyResult;
+    if (result.error) throw result.error;
+    const all = result.data;
     const weekDates = new Set(Array.from({length: 7}, (_, i) => shiftDate(today, -i)));
     weekCompleted = (all.sessions || []).filter(session =>
       weekDates.has(String(session.session_date).slice(0, 10)) && session.status === 'completed'
@@ -91,13 +157,16 @@ async function refreshMetrics() {
     weekCompleted = completedSessions;
   }
 
+  if (version !== metricsVersion) return;
   $('todaySessions').textContent = `${completedSessions} / ${TIMES_PER_DAY}`;
   $('todayExercises').textContent = `${completedExercises} / ${totalExercises || 14}`;
   $('weekSessions').textContent = `${weekCompleted} / ${7 * TIMES_PER_DAY}`;
 }
 
 async function renderDashboard() {
-  await refreshMetrics();
+  void refreshMetrics().catch(() => {
+    // Workout navigation remains available if metrics fail.
+  });
 
   $('selectedDateLabel').textContent = formatDate(selectedDate, {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   $('datePicker').value = selectedDate;
@@ -146,13 +215,19 @@ async function ensureSession(slot) {
   let sessions = sessionsForSelectedDate();
 
   while (sessions.length < slot) {
-    await apiPost('createSession', {
+    const created = await apiPost('createSession', {
       user_id: userData.user_id,
       template_id: DEFAULT_TEMPLATE_ID,
       session_date: selectedDate
     });
-    await loadDashboard(selectedDate);
-    sessions = sessionsForSelectedDate();
+    // Most writes return the full session; avoid reading it again.
+    const record = created?.session || created;
+    if (record?.session_id && Array.isArray(record.items)) {
+      sessions.push(record);
+    } else {
+      await loadDashboard(selectedDate);
+      sessions = sessionsForSelectedDate();
+    }
   }
 
   return sessions[slot - 1];
@@ -261,6 +336,8 @@ function refreshChecklist() {
 }
 
 async function openSession(slot) {
+  if (openingSession) return;
+  openingSession = true;
   selectedSessionNumber = slot;
   $('message').hidden = false;
   $('message').textContent = 'Loading session…';
@@ -268,23 +345,39 @@ async function openSession(slot) {
   try {
     selectedSession = await ensureSession(slot);
 
-    if (selectedSession.status === 'scheduled') {
-      selectedSession = await apiPost('startSession', {session_id: selectedSession.session_id});
-    }
-
     renderWorkout();
     $('message').hidden = true;
+
+    if (selectedSession.status === 'scheduled') {
+      // Show exercise details while the start event is saved.
+      $('backButton').disabled = true;
+      $('list').querySelectorAll('input').forEach(input => input.disabled = true);
+      $('saveNotice').textContent = 'Starting session…';
+      selectedSession = await apiPost('startSession', {session_id: selectedSession.session_id});
+      refreshChecklist();
+      $('saveNotice').textContent = 'Progress is saved to the workout backend.';
+    }
   } catch (error) {
+    $('message').hidden = false;
     $('message').textContent = error.message;
+    $('saveNotice').textContent = 'Session could not be started. Return to the dashboard to retry.';
+    return;
+  } finally {
+    openingSession = false;
+    $('backButton').disabled = false;
   }
+  $('list').querySelectorAll('input').forEach(input => input.disabled = false);
 }
 
 async function showDashboard() {
   $('workout').hidden = true;
   $('dashboard').hidden = false;
-  $('message').hidden = false;
-  $('message').textContent = 'Refreshing workouts…';
-  await loadDashboard(selectedDate);
+  // Writes already return current session data. Reuse it on Back.
+  if (selectedSession) {
+    const sessions = sessionsForSelectedDate();
+    const index = sessions.findIndex(session => session.session_id === selectedSession.session_id);
+    if (index >= 0) sessions[index] = selectedSession;
+  }
   updateUrl();
   await renderDashboard();
   $('message').hidden = true;
@@ -298,9 +391,8 @@ async function load() {
   }
 
   try {
-    userData = await apiGet('user', {user});
     selectedDate = parseDate(params.get('date')) ? params.get('date') : dateKey();
-    await loadDashboard(selectedDate);
+    [userData] = await Promise.all([apiGet('user', {user}), loadDashboard(selectedDate)]);
 
     $('userName').textContent = userData.display_name;
     $('dashboardTitle').textContent = `${userData.display_name}’s workouts`;
@@ -329,3 +421,4 @@ async function load() {
 }
 
 load();
+
