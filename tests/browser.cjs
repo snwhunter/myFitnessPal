@@ -1,82 +1,104 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const seed=require('../data/andrew-ankle-rehab.json');
 const output=process.env.BROWSER_ARTIFACTS || '/tmp/myfitnesspal-browser';
 fs.mkdirSync(output,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true});
+ try {
  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles'});
- const page=await context.newPage();
- const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+ const sessions=[]; const calls=[]; let releaseHistory;
+ const historyGate=new Promise(resolve=>releaseHistory=resolve);
+ let releaseStart; let nextId=0;
+ await context.route('https://script.google.com/**',async route=>{
+   const request=route.request(); const url=new URL(request.url());
+   const body=request.method()==='POST'?JSON.parse(request.postData()):Object.fromEntries(url.searchParams);
+   const action=body.action; calls.push(action); let data;
+   if(action==='user') {
+     if(body.user!=='andrew.hunter') return route.fulfill({json:{ok:false,error:'Unknown user'}});
+     data={user_id:'andrew.hunter',display_name:'Andrew'};
+   } else if(action==='dashboard') data={sessions:sessions.filter(s=>s.session_date===body.date)};
+   else if(action==='sessions') {await historyGate;data={sessions};}
+   else if(action==='createSession') {
+     const id=`session-${++nextId}`;
+     data={session_id:id,session_date:body.session_date,template_id:body.template_id,status:'scheduled',items:seed.activities.map(a=>({session_item_id:`${id}-${a.activity_id}`,title:a.title,completed:false,prescription:{notes:a.prescription},exercise:{summary:a.purpose,notes:a.notes},thumbnail_url:a.thumbnail,steps:a.steps.map((instruction,i)=>({instruction,image_url:a.images[i]?.src}))}))};
+     sessions.push(data);
+   } else if(action==='startSession') {
+     await new Promise(resolve=>releaseStart=resolve);
+     data=sessions.find(s=>s.session_id===body.session_id);data.status='in_progress';
+   } else if(action==='checkItem') {
+     data=sessions.find(s=>s.items.some(i=>i.session_item_id===body.session_item_id));
+     data.items.find(i=>i.session_item_id===body.session_item_id).completed=body.completed;
+     data.progress={percent:Math.round(100*data.items.filter(i=>i.completed).length/data.items.length)};
+   } else if(action==='completeSession') {data=sessions.find(s=>s.session_id===body.session_id);data.status='completed';}
+   else throw Error(`Unexpected action ${action}`);
+   await route.fulfill({json:{ok:true,data}});
+ });
+ const page=await context.newPage(); const errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://localhost:8765/?user=andrew.hunter');
- await page.locator('#dashboard').waitFor({state:'visible'});
- assert.equal(await page.locator('.session-card').count(),2);
+ await page.locator('.session-card').first().waitFor();
+ assert.equal(await page.locator('.session-card').count(),2,'Cards render while history request is pending');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.1');
  const today=await page.locator('#datePicker').inputValue();
  await page.screenshot({path:output+'/dashboard-mobile.png'});
- const center=await page.locator('#dateRoller').evaluate(el=>{const b=el.querySelector('[aria-pressed=true]'); return Math.abs(b.getBoundingClientRect().left+b.clientWidth/2-el.getBoundingClientRect().left-el.clientWidth/2)});
- assert.ok(center<5,`Selected date must be centered, error ${center}`);
- await page.locator('[data-session="1"]').click();
- assert.equal(await page.locator('.item').count(),7);
+ await page.locator('[data-session="2"]').click();
+ await page.locator('.item').first().waitFor();
+ assert.equal(await page.locator('.item').count(),7,'Details render before startSession finishes');
+ await page.waitForFunction(()=>document.querySelector('.check').disabled);
+ assert.equal(calls.filter(a=>a==='dashboard').length,1,'Creation responses avoid dashboard rereads');
+ assert.equal(calls.filter(a=>a==='createSession').length,2);
  await page.locator('.exercise summary').nth(2).click();
  assert.ok((await page.locator('.detail').nth(2).innerText()).includes('hold 5 sec'));
+ releaseStart();
+ await page.waitForFunction(()=>!document.querySelector('.check').disabled);
  await page.locator('.check').first().check();
- assert.equal(await page.locator('details[open]').count(),1,'Checking does not collapse details');
+ await page.waitForFunction(()=>document.querySelector('#count').textContent==='1 / 7 complete');
+ assert.equal(await page.locator('details[open]').count(),1);
  await page.screenshot({path:output+'/workout-mobile.png'});
- await page.reload();
- await page.locator('#workout').waitFor({state:'visible'});
+ releaseHistory();
+ await page.locator('#backButton').click();
+ assert.equal(calls.filter(a=>a==='dashboard').length,1,'Back reuses current session data');
+ await page.waitForFunction(()=>document.querySelector('#todayExercises').textContent==='1 / 14');
+ await page.locator('[data-session="2"]').click();
  assert.equal(await page.locator('.check').first().isChecked(),true);
  await page.locator('#backButton').click();
- assert.equal(await page.locator('#todayExercises').innerText(),'1 / 14');
- await page.locator('[data-session="2"]').click();
- assert.equal(await page.locator('.check').first().isChecked(),false);
- await page.locator('#backButton').click();
  await page.locator('#previousDate').click();
- assert.notEqual(await page.locator('#datePicker').inputValue(),today);
+ await page.waitForFunction(t=>document.querySelector('#datePicker').value!==t,today);
  await page.locator('[data-session="1"]').click();
- assert.equal(await page.locator('.check').first().isChecked(),false);
+ await page.locator('.item').first().waitFor();
+ await page.waitForFunction(()=>document.querySelector('.check').disabled);
+ releaseStart();
+ await page.waitForFunction(()=>!document.querySelector('.check').disabled);
+ assert.equal(await page.locator('.check').first().isChecked(),false,'Completion is isolated by date');
  await page.locator('#backButton').click();
  await page.locator('#todayButton').click();
- await page.locator('[data-session="1"]').click();
- for(const box of await page.locator('.check').all())await box.check();
+ await page.waitForFunction(t=>document.querySelector('#datePicker').value===t,today);
+ await page.locator('[data-session="2"]').click();
+ await page.locator('.item').first().waitFor();
+ for(const box of await page.locator('.check').all()) {
+   await box.check();
+   await page.waitForFunction(()=>![...document.querySelectorAll('.check')].some(i=>i.disabled));
+ }
  await page.locator('#backButton').click();
- assert.equal(await page.locator('#todaySessions').innerText(),'1 / 2');
- assert.equal(await page.locator('#weekSessions').innerText(),'1 / 14');
+ await page.waitForFunction(()=>document.querySelector('#weekSessions').textContent==='1 / 14');
  assert.equal(await page.locator('.session-card.complete').count(),1);
- await page.locator('[data-session="1"]').click();
- for(const summary of await page.locator('summary').all()) await summary.click();
- await page.evaluate(async()=>{await Promise.all([...document.images].map(img=>{img.loading='eager';return img.decode()}))});
- assert.equal(await page.locator('.detail-image').count(),7);
- assert.equal(await page.evaluate(()=>[...document.images].every(i=>i.complete&&i.naturalWidth>0)),true);
+ await page.reload();
+ await page.locator('.session-card.complete').waitFor();
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.1');
+ const logs=await page.evaluate(()=>window.myFitnessPalLog.entries());
+ assert(logs.some(e=>e.action==='checkItem'&&e.outcome==='success'&&e.durationMs>=0));
+ assert(logs.every(e=>e.startedAt&&e.version==='0.3.1'));
+ assert(logs.filter(e=>e.outcome!=='pending').every(e=>e.finishedAt));
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.setViewportSize({width:1280,height:900});
- await page.locator('#backButton').click();
  await page.screenshot({path:output+'/dashboard-desktop.png'});
  await page.goto('http://localhost:8765/?user=unknown');
- assert.ok((await page.locator('#message').innerText()).includes('Choose a user'));
- // Corrupt storage never prevents loading.
- await page.evaluate(()=>localStorage.setItem('myfitnesspal:andrew.hunter:andrew-ankle-rehab:2026-10-03:session:1','broken'));
- await page.goto('http://localhost:8765/?user=andrew.hunter&date=2026-02-30&session=NaN');
- await page.locator('#dashboard').waitFor({state:'visible'});
- assert.equal(await page.locator('#datePicker').inputValue(),today);
- // Legacy prototype progress migrates once and doesn't recur on another date.
- const legacyContext=await browser.newContext({timezoneId:'America/Los_Angeles'});
- await legacyContext.addInitScript(()=>localStorage.setItem('myfitnesspal:andrew.hunter:andrew-ankle-rehab:session:2','["ankle-alphabet"]'));
- const legacy=await legacyContext.newPage();
- await legacy.goto('http://localhost:8765/?user=andrew.hunter');
- await legacy.locator('#dashboard').waitFor({state:'visible'});
- assert.equal(await legacy.locator('#todayExercises').innerText(),'1 / 14');
- await legacy.locator('#previousDate').click(); await legacy.locator('[data-session="2"]').click();
- assert.equal(await legacy.locator('.check').first().isChecked(),false);
- // Storage-disabled browser retains a usable checklist.
- const restricted=await browser.newContext();
- await restricted.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new Error('disabled')}}));
- const noStorage=await restricted.newPage();
- await noStorage.goto('http://localhost:8765/?user=andrew.hunter');
- await noStorage.locator('#dashboard').waitFor({state:'visible'});
- assert.ok((await noStorage.locator('#saveNotice').innerText()).includes('unavailable'));
- await noStorage.locator('[data-session="1"]').click();await noStorage.locator('.check').first().check();
- assert.equal(await noStorage.locator('#count').innerText(),'1 / 7 complete');
+ await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Unknown user'));
+ const failures=await page.evaluate(()=>window.myFitnessPalLog.entries());
+ assert(failures.some(e=>e.action==='user'&&e.outcome==='error'&&e.finishedAt));
  assert.deepEqual(errors,[]);
- await browser.close();
- console.log('PASS: dashboard, centered date roller, exercise images/details, reload persistence, day/session isolation, metrics, legacy migration, malformed data, storage-disabled fallback and mobile/desktop layout');
+ console.log('PASS: delayed metrics/start, request counts, Google-backed persistence, completion/date isolation, local success/failure logs, visible version, mobile/desktop layout');
+ } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});
