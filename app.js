@@ -1,12 +1,15 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
+const APP_VERSION = '0.3.1';
+
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
 const TIMES_PER_DAY = 2;
 
 const params = new URLSearchParams(location.search);
 const user = (params.get('user') || '').trim().toLowerCase();
 const $ = id => document.getElementById(id);
+$('appVersion').textContent = `v${APP_VERSION}`;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let userData;
@@ -54,7 +57,7 @@ async function apiRequest(action, method, url, options) {
   const started = performance.now();
   const entry = {
     id: `${Date.now()}-${++callSequence}`,
-    action, method, startedAt: new Date().toISOString(), outcome: 'pending'
+    action, method, version: APP_VERSION, startedAt: new Date().toISOString(), outcome: 'pending'
   };
   callLogs.push(entry);
   callLogs = callLogs.slice(-MAX_CALL_LOGS);
