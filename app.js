@@ -1,7 +1,7 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
 const TIMES_PER_DAY = 2;
@@ -34,8 +34,18 @@ try {
 } catch { /* Logging also works when browser storage is unavailable. */ }
 let callSequence = 0;
 
+function renderCallLogs() {
+  if (!$('callLogRows')) return;
+  $('callLogRows').innerHTML = callLogs.slice().reverse().map(entry => {
+    const start = new Date(entry.startedAt).toLocaleTimeString();
+    const duration = entry.durationMs === undefined ? '…' : `${(entry.durationMs / 1000).toFixed(2)} s`;
+    return `<tr><td>${esc(start)}</td><td>${esc(entry.action)}</td><td>${esc(duration)}</td><td>${esc(entry.outcome)}</td></tr>`;
+  }).join('');
+}
+
 function saveCallLogs() {
   try { sessionStorage.setItem(CALL_LOG_KEY, JSON.stringify(callLogs)); } catch {}
+  renderCallLogs();
 }
 
 // Inspect or download timings from the browser console; no workout payloads are logged.
@@ -53,6 +63,10 @@ window.myFitnessPalLog = {
   }
 };
 
+$('downloadCallLog').addEventListener('click', () => window.myFitnessPalLog.download());
+$('clearCallLog').addEventListener('click', () => window.myFitnessPalLog.clear());
+renderCallLogs();
+
 async function apiRequest(action, method, url, options) {
   const started = performance.now();
   const entry = {
@@ -65,6 +79,7 @@ async function apiRequest(action, method, url, options) {
   console.debug('[myFitnessPal API] start', {...entry});
   try {
     const response = await fetch(url, options);
+    entry.responseReceivedMs = Math.round(performance.now() - started);
     entry.status = response.status;
     if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
     const payload = await response.json();
@@ -421,4 +436,5 @@ async function load() {
 }
 
 load();
+
 
