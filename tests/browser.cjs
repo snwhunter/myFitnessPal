@@ -33,14 +33,15 @@ fs.mkdirSync(output,{recursive:true});
      data.progress={percent:Math.round(100*data.items.filter(i=>i.completed).length/data.items.length)};
    } else if(action==='completeSession') {data=sessions.find(s=>s.session_id===body.session_id);data.status='completed';}
    else throw Error(`Unexpected action ${action}`);
-   await route.fulfill({json:{ok:true,data}});
+   await route.fulfill({json:{ok:true,backend_version:"0.3.3",data}});
  });
  const page=await context.newPage(); const errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://localhost:8765/?user=andrew.hunter');
  await page.locator('.session-card').first().waitFor();
  assert.equal(await page.locator('.session-card').count(),2,'Cards render while history request is pending');
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.2');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.3');
+ assert.equal(await page.locator('#backendVersion').innerText(),'Backend: 0.3.3');
  await page.locator('#callLogPanel summary').click();
  assert.ok((await page.locator('#callLogRows').innerText()).includes('pending'));
  await page.locator('#callLogPanel summary').click();
@@ -89,10 +90,10 @@ fs.mkdirSync(output,{recursive:true});
  assert.equal(await page.locator('.session-card.complete').count(),1);
  await page.reload();
  await page.locator('.session-card.complete').waitFor();
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.2');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.3');
  const logs=await page.evaluate(()=>window.myFitnessPalLog.entries());
  assert(logs.some(e=>e.action==='checkItem'&&e.outcome==='success'&&e.durationMs>=0));
- assert(logs.every(e=>e.startedAt&&e.version==='0.3.2'));
+ assert(logs.every(e=>e.startedAt&&e.version==='0.3.3'));
  assert(logs.filter(e=>e.outcome!=='pending').every(e=>e.finishedAt));
  assert(logs.filter(e=>e.outcome==='success').every(e=>e.responseReceivedMs>=0));
  await page.locator('#callLogPanel summary').click();
@@ -109,4 +110,3 @@ fs.mkdirSync(output,{recursive:true});
  console.log('PASS: delayed metrics/start, request counts, Google-backed persistence, completion/date isolation, local success/failure logs, visible version, mobile/desktop layout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});
-
