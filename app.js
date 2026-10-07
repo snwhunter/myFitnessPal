@@ -1,7 +1,7 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
-const APP_VERSION = '0.3.2';
+const APP_VERSION = '0.3.3';
 
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
 const TIMES_PER_DAY = 2;
@@ -83,6 +83,8 @@ async function apiRequest(action, method, url, options) {
     entry.status = response.status;
     if (!response.ok) throw new Error(`Backend request failed (${response.status}).`);
     const payload = await response.json();
+    entry.backendVersion = payload.backend_version || 'legacy';
+    $('backendVersion').textContent = `Backend: ${entry.backendVersion}`;
     if (!payload.ok) throw new Error(payload.error || 'Backend request failed.');
     entry.outcome = 'success';
     return payload.data;
@@ -147,7 +149,7 @@ async function loadDashboard(date = selectedDate) {
 async function refreshMetrics() {
   const version = ++metricsVersion;
   const today = dateKey();
-  const allRequest = historyRequest ||= apiGet('sessions', {user}).catch(error => {
+  const allRequest = historyRequest ||= apiGet('sessions', {user, summary: true}).catch(error => {
     historyRequest = null;
     throw error;
   });
@@ -233,7 +235,8 @@ async function ensureSession(slot) {
     const created = await apiPost('createSession', {
       user_id: userData.user_id,
       template_id: DEFAULT_TEMPLATE_ID,
-      session_date: selectedDate
+      session_date: selectedDate,
+      session_number: sessions.length + 1
     });
     // Most writes return the full session; avoid reading it again.
     const record = created?.session || created;
@@ -436,5 +439,4 @@ async function load() {
 }
 
 load();
-
 
