@@ -18,7 +18,7 @@ fs.mkdirSync(output,{recursive:true});
    if(action==='user') {
      if(body.user!=='andrew.hunter') return route.fulfill({json:{ok:false,error:'Unknown user'}});
      data={user_id:'andrew.hunter',display_name:'Andrew'};
-   } else if(action==='dashboard') {if(dashboardGate) await dashboardGate; data={user:{user_id:'andrew.hunter',display_name:'Andrew'},sessions:sessions.filter(s=>s.session_date===body.date)};}
+   } else if(action==='dashboard') {if(body.user!=='andrew.hunter') return route.fulfill({json:{ok:false,error:'Unknown user'}}); if(dashboardGate) await dashboardGate; data={user:{user_id:'andrew.hunter',display_name:'Andrew'},sessions:sessions.filter(s=>s.session_date===body.date)};}
    else if(action==='sessions') {await historyGate;data={sessions};}
    else if(action==='createSession') {
      const id=`session-${++nextId}`;
@@ -114,7 +114,7 @@ fs.mkdirSync(output,{recursive:true});
  await page.goto('http://localhost:8765/?user=unknown');
  await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Unknown user'));
  const failures=await page.evaluate(()=>window.myFitnessPalLog.entries());
- assert(failures.some(e=>e.action==='user'&&e.outcome==='error'&&e.finishedAt));
+ assert(failures.some(e=>e.action==='dashboard'&&e.outcome==='error'&&e.finishedAt));
  assert.deepEqual(errors,[]);
  console.log('PASS: delayed metrics/start, request counts, Google-backed persistence, completion/date isolation, local success/failure logs, visible version, mobile/desktop layout');
  } finally {await browser.close();}
