@@ -10,7 +10,7 @@ fs.mkdirSync(output,{recursive:true});
  const context=await browser.newContext({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles'});
  const sessions=[]; const calls=[]; let releaseHistory;
  const historyGate=new Promise(resolve=>releaseHistory=resolve);
- let releaseStart; let nextId=0;
+ let releaseStart; let nextId=0; let dashboardGate;
  await context.route('https://script.google.com/**',async route=>{
    const request=route.request(); const url=new URL(request.url());
    const body=request.method()==='POST'?JSON.parse(request.postData()):Object.fromEntries(url.searchParams);
@@ -18,7 +18,7 @@ fs.mkdirSync(output,{recursive:true});
    if(action==='user') {
      if(body.user!=='andrew.hunter') return route.fulfill({json:{ok:false,error:'Unknown user'}});
      data={user_id:'andrew.hunter',display_name:'Andrew'};
-   } else if(action==='dashboard') data={sessions:sessions.filter(s=>s.session_date===body.date)};
+   } else if(action==='dashboard') {if(dashboardGate) await dashboardGate; data={user:{user_id:'andrew.hunter',display_name:'Andrew'},sessions:sessions.filter(s=>s.session_date===body.date)};}
    else if(action==='sessions') {await historyGate;data={sessions};}
    else if(action==='createSession') {
      const id=`session-${++nextId}`;
@@ -40,7 +40,7 @@ fs.mkdirSync(output,{recursive:true});
  await page.goto('http://localhost:8765/?user=andrew.hunter');
  await page.locator('.session-card').first().waitFor();
  assert.equal(await page.locator('.session-card').count(),2,'Cards render while history request is pending');
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.3');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.4');
  assert.equal(await page.locator('#backendVersion').innerText(),'Backend: 0.3.3');
  await page.locator('#callLogPanel summary').click();
  assert.ok((await page.locator('#callLogRows').innerText()).includes('pending'));
@@ -88,12 +88,21 @@ fs.mkdirSync(output,{recursive:true});
  await page.locator('#backButton').click();
  await page.waitForFunction(()=>document.querySelector('#weekSessions').textContent==='1 / 14');
  assert.equal(await page.locator('.session-card.complete').count(),1);
+ let releaseDashboard;
+ dashboardGate=new Promise(resolve=>releaseDashboard=resolve);
  await page.reload();
  await page.locator('.session-card.complete').waitFor();
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.3');
+ assert.ok((await page.locator('#dashboardNotice').innerText()).includes('Updating'));
+ await page.locator('[data-session="2"]').click();
+ await page.locator('.item').first().waitFor();
+ assert.equal(await page.locator('.check').first().isDisabled(),true,'Cached progress is checked before writes');
+ releaseDashboard(); dashboardGate=null;
+ await page.waitForFunction(()=>!document.querySelector('.check').disabled);
+ await page.locator('#backButton').click();
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.4');
  const logs=await page.evaluate(()=>window.myFitnessPalLog.entries());
  assert(logs.some(e=>e.action==='checkItem'&&e.outcome==='success'&&e.durationMs>=0));
- assert(logs.every(e=>e.startedAt&&e.version==='0.3.3'));
+ assert(logs.every(e=>e.startedAt&&e.version==='0.3.4'));
  assert(logs.filter(e=>e.outcome!=='pending').every(e=>e.finishedAt));
  assert(logs.filter(e=>e.outcome==='success').every(e=>e.responseReceivedMs>=0));
  await page.locator('#callLogPanel summary').click();

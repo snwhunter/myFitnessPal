@@ -1,7 +1,7 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
-const APP_VERSION = '0.3.3';
+const APP_VERSION = '0.3.4';
 
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
 const TIMES_PER_DAY = 2;
@@ -20,6 +20,81 @@ let selectedSession;
 let openingSession = false;
 let historyRequest;
 let metricsVersion = 0;
+
+const DASHBOARD_CACHE_KEY = `myfitnesspal:dashboard:v1:${user}`;
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+let savedDashboards = {};
+let savedHistory;
+let dashboardIsSaved = false;
+const dashboardRequests = new Map();
+const dashboardRevisions = new Map();
+try {
+  const saved = JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || '{}');
+  if (saved && saved.schema === 1 && saved.user === user) {
+    for (const [date, entry] of Object.entries(saved.dates || {})) {
+      if (parseDate(date) && Number.isFinite(entry?.savedAt) &&
+          Date.now() - entry.savedAt < CACHE_MAX_AGE_MS && entry.data?.user?.user_id &&
+          Array.isArray(entry.data.sessions) && entry.data.sessions.every(session =>
+            session && typeof session.session_id === 'string' && Array.isArray(session.items))) {
+        savedDashboards[date] = entry;
+      }
+    }
+    if (Array.isArray(saved.history?.sessions)) savedHistory = saved.history;
+  }
+} catch { /* A missing or unavailable cache falls back to live loading. */ }
+
+function persistDashboardCache() {
+  const dates = Object.fromEntries(Object.entries(savedDashboards)
+    .sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 7));
+  savedDashboards = dates;
+  try { localStorage.setItem(DASHBOARD_CACHE_KEY,
+    JSON.stringify({schema: 1, user, dates, history: savedHistory})); } catch {}
+}
+
+function saveDashboard(date, data) {
+  // Older backends may omit user from dashboard responses.
+  if (!data.user && userData) data = {...data, user: userData};
+  savedDashboards[date] = {savedAt: Date.now(), data};
+  persistDashboardCache();
+}
+
+function rememberSession(session) {
+  if (!session?.session_id || !Array.isArray(session.items)) return;
+  const date = String(session.session_date || selectedDate).slice(0, 10);
+  dashboardRevisions.set(date, (dashboardRevisions.get(date) || 0) + 1);
+  const data = date === selectedDate ? dashboardData : savedDashboards[date]?.data;
+  if (data) {
+    const index = data.sessions.findIndex(item => item.session_id === session.session_id);
+    if (index < 0) data.sessions.push(session); else data.sessions[index] = session;
+    saveDashboard(date, data);
+  }
+  if (savedHistory) {
+    const index = savedHistory.sessions.findIndex(item => item.session_id === session.session_id);
+    const summary = {...session, items: session.items.map(item => ({
+      session_item_id: item.session_item_id, completed: item.completed
+    }))};
+    if (index < 0) savedHistory.sessions.push(summary); else savedHistory.sessions[index] = summary;
+    persistDashboardCache();
+  }
+}
+
+function renderTodayMetrics(data) {
+  const sessions = data?.sessions || [];
+  const complete = sessions.filter(sessionDone).length;
+  const total = sessions.reduce((sum, session) => sum + (session.items?.length || 0), 0);
+  const checked = sessions.reduce((sum, session) => sum + countCompleted(session), 0);
+  $('todaySessions').textContent = `${complete} / ${TIMES_PER_DAY}`;
+  $('todayExercises').textContent = `${checked} / ${total || 14}`;
+  if (savedHistory) {
+    const dates = new Set(Array.from({length: 7}, (_, i) => shiftDate(dateKey(), -i)));
+    const count = savedHistory.sessions.filter(session => dates.has(String(session.session_date).slice(0, 10)) && sessionDone(session)).length;
+    $('weekSessions').textContent = `${count} / ${7 * TIMES_PER_DAY}`;
+  }
+}
+
+function updateDashboardNotice(text) {
+  $('dashboardNotice').textContent = text;
+}
 
 function formatDate(date, options) {
   return parseDate(date).toLocaleDateString(undefined, options);
@@ -114,6 +189,7 @@ async function apiPost(action, body = {}) {
     body: JSON.stringify({action, ...body})
   });
   historyRequest = null;
+  rememberSession(data?.session || data);
   return data;
 }
 
@@ -142,8 +218,23 @@ function sessionDone(session) {
 }
 
 async function loadDashboard(date = selectedDate) {
-  dashboardData = await apiGet('dashboard', {user, date});
-  return dashboardData;
+  if (!dashboardRequests.has(date)) {
+    const revision = dashboardRevisions.get(date) || 0;
+    const request = apiGet('dashboard', {user, date}).then(data => {
+      // A late read must never replace a session that was saved meanwhile.
+      if ((dashboardRevisions.get(date) || 0) !== revision && savedDashboards[date]) {
+        data = savedDashboards[date].data;
+      }
+      saveDashboard(date, data);
+      if (selectedDate === date) {
+        dashboardData = data;
+        dashboardIsSaved = false;
+      }
+      return data;
+    }).finally(() => dashboardRequests.delete(date));
+    dashboardRequests.set(date, request);
+  }
+  return dashboardRequests.get(date);
 }
 
 async function refreshMetrics() {
@@ -154,7 +245,10 @@ async function refreshMetrics() {
     throw error;
   });
   // Attach a handler immediately while today's data loads.
-  const historyResult = allRequest.then(data => ({data}), error => ({error}));
+  const historyResult = allRequest.then(data => {
+    if (version === metricsVersion) { savedHistory = data; persistDashboardCache(); }
+    return {data};
+  }, error => ({error}));
   const todayData = selectedDate === today ? dashboardData : await apiGet('dashboard', {user, date: today});
   const todaySessions = todayData.sessions || [];
   const totalExercises = todaySessions.reduce((sum, session) => sum + (session.items?.length || 0), 0);
@@ -180,8 +274,9 @@ async function refreshMetrics() {
   $('weekSessions').textContent = `${weekCompleted} / ${7 * TIMES_PER_DAY}`;
 }
 
-async function renderDashboard() {
-  void refreshMetrics().catch(() => {
+async function renderDashboard({refresh = true} = {}) {
+  renderTodayMetrics(selectedDate === dateKey() ? dashboardData : savedDashboards[dateKey()]?.data);
+  if (refresh) void refreshMetrics().catch(() => {
     // Workout navigation remains available if metrics fail.
   });
 
@@ -218,14 +313,25 @@ async function renderDashboard() {
 }
 
 async function chooseDate(date) {
-  if (!parseDate(date)) return;
+  if (!parseDate(date) || openingSession) return;
   selectedDate = date;
-  $('message').hidden = false;
-  $('message').textContent = 'Loading workouts…';
-  await loadDashboard(selectedDate);
+  selectedSession = null;
+  const cached = savedDashboards[date];
+  dashboardData = cached?.data || {sessions: []};
+  dashboardIsSaved = !!cached;
   updateUrl();
-  await renderDashboard();
-  $('message').hidden = true;
+  await renderDashboard({refresh: false});
+  updateDashboardNotice(cached ? 'Showing saved workouts · Updating…' : 'Loading workouts…');
+  try {
+    await loadDashboard(date);
+    if (selectedDate !== date) return;
+    // Do not replace an open exercise view when the background read finishes.
+    if ($('workout').hidden) await renderDashboard();
+    updateDashboardNotice('Up to date');
+  } catch (error) {
+    if (selectedDate !== date) return;
+    updateDashboardNotice(cached ? 'Showing saved workouts · Refresh failed. Reload to retry.' : `Could not load workouts: ${error.message}`);
+  }
 }
 
 async function ensureSession(slot) {
@@ -241,7 +347,7 @@ async function ensureSession(slot) {
     // Most writes return the full session; avoid reading it again.
     const record = created?.session || created;
     if (record?.session_id && Array.isArray(record.items)) {
-      sessions.push(record);
+      if (!sessions.some(session => session.session_id === record.session_id)) sessions.push(record);
     } else {
       await loadDashboard(selectedDate);
       sessions = sessionsForSelectedDate();
@@ -361,6 +467,19 @@ async function openSession(slot) {
   $('message').textContent = 'Loading session…';
 
   try {
+    if (dashboardIsSaved || dashboardRequests.has(selectedDate)) {
+      const preview = sessionForSlot(slot);
+      $('backButton').disabled = true;
+      if (preview) {
+        selectedSession = preview;
+        renderWorkout();
+        $('message').hidden = false;
+        $('message').textContent = 'Showing saved exercises · Checking latest progress…';
+        $('list').querySelectorAll('input').forEach(input => input.disabled = true);
+      }
+      await loadDashboard(selectedDate);
+      updateDashboardNotice('Up to date');
+    }
     selectedSession = await ensureSession(slot);
 
     renderWorkout();
@@ -402,41 +521,64 @@ async function showDashboard() {
   window.scrollTo(0, 0);
 }
 
+function setupUserHeading() {
+  $('userName').textContent = userData.display_name;
+  $('dashboardTitle').textContent = `${userData.display_name}’s workouts`;
+  document.querySelector('.pill').textContent = `Daily · ${TIMES_PER_DAY} sessions`;
+  document.title = `${userData.display_name} · myFitnessPal`;
+  $('saveNotice').textContent = 'Progress is saved to the workout backend.';
+}
+
 async function load() {
   if (!user) {
     $('message').innerHTML = 'Choose a user to view their dashboard. <a href="?user=andrew.hunter">Open Andrew’s dashboard</a>';
     return;
   }
+  selectedDate = parseDate(params.get('date')) ? params.get('date') : dateKey();
+  const date = selectedDate;
+  const cached = savedDashboards[date];
+  const deepSession = Number(params.get('session'));
+  $('todayButton').addEventListener('click', () => chooseDate(dateKey()));
+  $('previousDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, -1)));
+  $('nextDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, 1)));
+  $('datePicker').addEventListener('change', event => chooseDate(event.target.value));
+  $('backButton').addEventListener('click', showDashboard);
 
-  try {
-    selectedDate = parseDate(params.get('date')) ? params.get('date') : dateKey();
-    [userData] = await Promise.all([apiGet('user', {user}), loadDashboard(selectedDate)]);
-
-    $('userName').textContent = userData.display_name;
-    $('dashboardTitle').textContent = `${userData.display_name}’s workouts`;
-    document.querySelector('.pill').textContent = `Daily · ${TIMES_PER_DAY} sessions`;
-    document.title = `${userData.display_name} · myFitnessPal`;
-    $('saveNotice').textContent = 'Progress is saved to the workout backend.';
-
-    $('todayButton').addEventListener('click', () => chooseDate(dateKey()));
-    $('previousDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, -1)));
-    $('nextDate').addEventListener('click', () => chooseDate(shiftDate(selectedDate, 1)));
-    $('datePicker').addEventListener('change', event => chooseDate(event.target.value));
-    $('backButton').addEventListener('click', showDashboard);
-
+  if (cached) {
+    userData = cached.data.user;
+    dashboardData = cached.data;
+    dashboardIsSaved = true;
+    setupUserHeading();
     $('message').hidden = true;
     $('dashboard').hidden = false;
-    await renderDashboard();
+    await renderDashboard({refresh: false});
+    updateDashboardNotice('Showing saved workouts · Updating…');
+  }
 
-    const session = Number(params.get('session'));
-    if (Number.isInteger(session) && session >= 1 && session <= TIMES_PER_DAY) {
-      await openSession(session);
+  try {
+    const data = await loadDashboard(date);
+    if (selectedDate !== date) return;
+    userData = data.user || await apiGet('user', {user});
+    saveDashboard(date, data);
+    setupUserHeading();
+    $('message').hidden = true;
+    if ($('workout').hidden) {
+      $('dashboard').hidden = false;
+      await renderDashboard();
+    }
+    updateDashboardNotice('Up to date');
+    if (!selectedSessionNumber && Number.isInteger(deepSession) && deepSession >= 1 && deepSession <= TIMES_PER_DAY) {
+      await openSession(deepSession);
     }
   } catch (error) {
-    $('message').hidden = false;
-    $('message').textContent = `${error.message} Please reload to try again.`;
+    if (selectedDate !== date) return;
+    if (cached) {
+      updateDashboardNotice('Showing saved workouts · Refresh failed. Reload to retry.');
+    } else {
+      $('message').hidden = false;
+      $('message').textContent = `${error.message} Please reload to try again.`;
+    }
   }
 }
 
 load();
-
