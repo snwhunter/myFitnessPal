@@ -1,10 +1,19 @@
 import {dateKey, parseDate, shiftDate} from './workout-state.js';
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzSdpqyiye1J69SupLr3uNe4OUv9CyDpaHzht3Qw2Gyf9a258zobes-K5wXG9bHwQCJ/exec';
-const APP_VERSION = '0.3.4';
+const APP_VERSION = '0.3.5';
 
 const DEFAULT_TEMPLATE_ID = 'andrew-ankle-rehab';
-const TIMES_PER_DAY = 2;
+const DAILY_SESSIONS = [
+  {templateId: DEFAULT_TEMPLATE_ID, number: 1, title: 'Session 1', workout: 'Andrew Ankle Rehab', items: 7},
+  {templateId: DEFAULT_TEMPLATE_ID, number: 2, title: 'Session 2', workout: 'Andrew Ankle Rehab', items: 7},
+  {templateId: 'andrew-teeth-morning', number: 1, title: 'Morning teeth brushing', workout: '2 minutes · Morning', items: 1},
+  {templateId: 'andrew-teeth-evening', number: 1, title: 'Evening teeth brushing', workout: '2 minutes · Before bed', items: 1}
+];
+function dailySessions() {
+  return userData?.user_id === 'USR-0001' || user === 'andrew.hunter' ? DAILY_SESSIONS : DAILY_SESSIONS.slice(0, 2);
+}
+function dailyItemTarget() { return dailySessions().reduce((sum, slot) => sum + slot.items, 0); }
 
 const params = new URLSearchParams(location.search);
 const user = (params.get('user') || '').trim().toLowerCase();
@@ -83,12 +92,12 @@ function renderTodayMetrics(data) {
   const complete = sessions.filter(sessionDone).length;
   const total = sessions.reduce((sum, session) => sum + (session.items?.length || 0), 0);
   const checked = sessions.reduce((sum, session) => sum + countCompleted(session), 0);
-  $('todaySessions').textContent = `${complete} / ${TIMES_PER_DAY}`;
-  $('todayExercises').textContent = `${checked} / ${total || 14}`;
+  $('todaySessions').textContent = `${complete} / ${dailySessions().length}`;
+  $('todayExercises').textContent = `${checked} / ${Math.max(total, dailyItemTarget())}`;
   if (savedHistory) {
     const dates = new Set(Array.from({length: 7}, (_, i) => shiftDate(dateKey(), -i)));
     const count = savedHistory.sessions.filter(session => dates.has(String(session.session_date).slice(0, 10)) && sessionDone(session)).length;
-    $('weekSessions').textContent = `${count} / ${7 * TIMES_PER_DAY}`;
+    $('weekSessions').textContent = `${count} / ${7 * dailySessions().length}`;
   }
 }
 
@@ -206,7 +215,9 @@ function sessionsForSelectedDate() {
 }
 
 function sessionForSlot(slot) {
-  return sessionsForSelectedDate()[slot - 1] || null;
+  const definition = dailySessions()[slot - 1];
+  if (!definition) return null;
+  return sessionsForSelectedDate().filter(session => session.template_id === definition.templateId)[definition.number - 1] || null;
 }
 
 function countCompleted(session) {
@@ -269,9 +280,9 @@ async function refreshMetrics() {
   }
 
   if (version !== metricsVersion) return;
-  $('todaySessions').textContent = `${completedSessions} / ${TIMES_PER_DAY}`;
-  $('todayExercises').textContent = `${completedExercises} / ${totalExercises || 14}`;
-  $('weekSessions').textContent = `${weekCompleted} / ${7 * TIMES_PER_DAY}`;
+  $('todaySessions').textContent = `${completedSessions} / ${dailySessions().length}`;
+  $('todayExercises').textContent = `${completedExercises} / ${Math.max(totalExercises, dailyItemTarget())}`;
+  $('weekSessions').textContent = `${weekCompleted} / ${7 * dailySessions().length}`;
 }
 
 async function renderDashboard({refresh = true} = {}) {
@@ -297,14 +308,14 @@ async function renderDashboard({refresh = true} = {}) {
     if (selected) $('dateRoller').scrollLeft = selected.offsetLeft - ($('dateRoller').clientWidth - selected.clientWidth) / 2;
   });
 
-  $('sessions').innerHTML = Array.from({length: TIMES_PER_DAY}, (_, i) => {
+  $('sessions').innerHTML = dailySessions().map((definition, i) => {
     const slot = i + 1;
     const session = sessionForSlot(slot);
     const count = countCompleted(session);
-    const total = session?.items?.length || 7;
+    const total = session?.items?.length || definition.items;
     const done = sessionDone(session);
     const status = done ? 'Complete' : count ? 'Continue' : 'Start';
-    return `<button class="session-card ${done ? 'complete' : ''}" data-session="${slot}"><span class="session-icon" aria-hidden="true">${done ? '✓' : '›'}</span><span class="session-copy"><strong>Session ${slot}</strong><span>Andrew Ankle Rehab · ${count} / ${total} complete</span></span><span class="session-status">${status}</span></button>`;
+    return `<button class="session-card ${done ? 'complete' : ''}" data-session="${slot}"><span class="session-icon" aria-hidden="true">${done ? '✓' : '›'}</span><span class="session-copy"><strong>${esc(definition.title)}</strong><span>${esc(definition.workout)} · ${count} / ${total} complete</span></span><span class="session-status">${status}</span></button>`;
   }).join('');
 
   $('sessions').querySelectorAll('button').forEach(button =>
@@ -335,26 +346,25 @@ async function chooseDate(date) {
 }
 
 async function ensureSession(slot) {
-  let sessions = sessionsForSelectedDate();
-
-  while (sessions.length < slot) {
+  const definition = dailySessions()[slot - 1];
+  if (!definition) throw new Error('Unknown session');
+  const matching = () => sessionsForSelectedDate().filter(session => session.template_id === definition.templateId);
+  while (matching().length < definition.number) {
     const created = await apiPost('createSession', {
       user_id: userData.user_id,
-      template_id: DEFAULT_TEMPLATE_ID,
+      template_id: definition.templateId,
       session_date: selectedDate,
-      session_number: sessions.length + 1
+      session_number: matching().length + 1
     });
-    // Most writes return the full session; avoid reading it again.
     const record = created?.session || created;
     if (record?.session_id && Array.isArray(record.items)) {
+      const sessions = sessionsForSelectedDate();
       if (!sessions.some(session => session.session_id === record.session_id)) sessions.push(record);
     } else {
       await loadDashboard(selectedDate);
-      sessions = sessionsForSelectedDate();
     }
   }
-
-  return sessions[slot - 1];
+  return sessionForSlot(slot);
 }
 
 function itemPrescription(item) {
@@ -370,7 +380,7 @@ function itemPrescription(item) {
 function itemImages(item) {
   return (item.steps || [])
     .filter(step => step.image_url)
-    .map(step => ({src: step.image_url, alt: `${item.title} exercise illustration`}));
+    .map(step => ({src: step.image_url, alt: `${item.title} illustration`}));
 }
 
 function renderWorkout() {
@@ -379,8 +389,9 @@ function renderWorkout() {
 
   $('dashboard').hidden = true;
   $('workout').hidden = false;
-  $('workoutTitle').textContent = selectedSession.template_id === DEFAULT_TEMPLATE_ID ? 'Andrew Ankle Rehab' : 'Workout';
-  $('sessionLabel').textContent = `${formatDate(selectedDate, {month:'short',day:'numeric',year:'numeric'})} · Session ${selectedSessionNumber} of ${TIMES_PER_DAY}`;
+  const definition = dailySessions()[selectedSessionNumber - 1];
+  $('workoutTitle').textContent = selectedSession.template_id === DEFAULT_TEMPLATE_ID ? 'Andrew Ankle Rehab' : definition.title;
+  $('sessionLabel').textContent = `${formatDate(selectedDate, {month:'short',day:'numeric',year:'numeric'})} · ${esc(definition.title)}`;
 
   $('list').innerHTML = items.map(item => {
     const checked = item.completed === true || String(item.completed).toLowerCase() === 'true';
@@ -407,7 +418,7 @@ function renderWorkout() {
             <ol class="steps">${steps.map(step => `<li>${esc(step.instruction)}</li>`).join('')}</ol>
             ${exercise.notes ? `<p>${esc(exercise.notes)}</p>` : ''}
             ${images.map(img => `<img class="detail-image" src="${esc(img.src)}" alt="${esc(img.alt)}" loading="lazy">`).join('')}
-            <p class="source-label">From Andrew’s exercise sheet</p>
+            ${exercise.category === 'oral hygiene' ? '<p class="source-label">Brushing guidance: <a href="https://www.mouthhealthy.org/all-topics-a-z/brushing-your-teeth" target="_blank" rel="noopener">American Dental Association</a></p>' : '<p class="source-label">From Andrew’s exercise sheet</p>'}
           </div>
         </details>
       </div>
@@ -524,7 +535,7 @@ async function showDashboard() {
 function setupUserHeading() {
   $('userName').textContent = userData.display_name;
   $('dashboardTitle').textContent = `${userData.display_name}’s workouts`;
-  document.querySelector('.pill').textContent = `Daily · ${TIMES_PER_DAY} sessions`;
+  document.querySelector('.pill').textContent = `Daily · ${dailySessions().length} sessions`;
   document.title = `${userData.display_name} · myFitnessPal`;
   $('saveNotice').textContent = 'Progress is saved to the workout backend.';
 }
@@ -567,7 +578,7 @@ async function load() {
       await renderDashboard();
     }
     updateDashboardNotice('Up to date');
-    if (!selectedSessionNumber && Number.isInteger(deepSession) && deepSession >= 1 && deepSession <= TIMES_PER_DAY) {
+    if (!selectedSessionNumber && Number.isInteger(deepSession) && deepSession >= 1 && deepSession <= dailySessions().length) {
       await openSession(deepSession);
     }
   } catch (error) {
@@ -582,3 +593,4 @@ async function load() {
 }
 
 load();
+

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="440" viewBox="0 0 640 440" role="img" aria-labelledby="title desc">
+<title id="title">Brush morning and evening for two minutes</title><desc id="desc">A tooth, a soft toothbrush, sun and moon symbols, and a two minute clock.</desc>
+<rect width="640" height="440" rx="32" fill="#ecf9f8"/>
+<circle cx="90" cy="76" r="24" fill="#f5ba45"/><g stroke="#f5ba45" stroke-width="5"><path d="M90 36v-9M90 116v9M50 76h-9M130 76h9M62 48l-7-7M118 104l7 7M62 104l-7 7M118 48l7-7"/></g>
+<path d="M550 43a34 34 0 1 0 25 56 31 31 0 0 1-25-56" fill="#485b8c"/>
+<path d="M245 123c-55-8-73 23-60 77 9 37 16 107 37 113 22 6 21-74 48-74s26 80 48 74c21-6 28-76 37-113 13-54-5-85-60-77-15 3-34 3-50 0Z" fill="white" stroke="#348c88" stroke-width="7"/>
+<path d="M211 155c11-10 24-9 36-7" stroke="#b8e7e3" stroke-width="8" stroke-linecap="round" fill="none"/>
+<g transform="translate(342 210) rotate(-35)"><rect x="0" y="0" width="205" height="25" rx="12" fill="#29a6a0"/><rect x="-34" y="-6" width="60" height="35" rx="8" fill="#7fd4cf"/><path d="M-27-7v-22M-17-7v-22M-7-7v-22M3-7v-22M13-7v-22" stroke="#348c88" stroke-width="6" stroke-linecap="round"/></g>
+<circle cx="472" cy="134" r="44" fill="white" stroke="#348c88" stroke-width="5"/><path d="M472 103v31l16 12" fill="none" stroke="#348c88" stroke-width="5" stroke-linecap="round"/>
+<text x="320" y="379" text-anchor="middle" font-family="Arial,sans-serif" font-size="32" font-weight="bold" fill="#245451">2 minutes · Twice a day</text>
+<text x="320" y="413" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" fill="#476e6b">Soft brush · Fluoride toothpaste · Gentle strokes</text></svg>

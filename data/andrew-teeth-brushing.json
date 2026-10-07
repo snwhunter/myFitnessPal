@@ -1,0 +1,131 @@
+{
+  "source": "https://www.mouthhealthy.org/all-topics-a-z/brushing-your-teeth",
+  "rows": {
+    "Exercises": [
+      [
+        "teeth-brushing",
+        "Brush teeth",
+        "oral hygiene",
+        "Brush for two minutes each morning and before bed.",
+        "assets/exercises/teeth-brushing.svg",
+        "",
+        "",
+        120,
+        true,
+        "Guidance adapted from the American Dental Association. https://www.mouthhealthy.org/all-topics-a-z/brushing-your-teeth"
+      ]
+    ],
+    "ExerciseSteps": [
+      [
+        "teeth-brushing-01",
+        "teeth-brushing",
+        1,
+        "",
+        "Use a soft-bristled toothbrush and fluoride toothpaste. Set a timer for two minutes.",
+        "assets/exercises/teeth-brushing.svg",
+        "",
+        true
+      ],
+      [
+        "teeth-brushing-02",
+        "teeth-brushing",
+        2,
+        "",
+        "Spend about 30 seconds on each quarter of your mouth: upper right, upper left, lower right, and lower left.",
+        "",
+        "",
+        true
+      ],
+      [
+        "teeth-brushing-03",
+        "teeth-brushing",
+        3,
+        "",
+        "With a manual brush, angle the bristles about 45 degrees toward the gumline and use gentle, short strokes. With an electric brush, follow its instructions and guide it slowly along each tooth.",
+        "",
+        "",
+        true
+      ],
+      [
+        "teeth-brushing-04",
+        "teeth-brushing",
+        4,
+        "",
+        "Clean the outside, inside, and chewing surfaces of every tooth, including the back molars. For the inside of front teeth, hold a manual brush upright and use gentle up-and-down strokes.",
+        "",
+        "",
+        true
+      ],
+      [
+        "teeth-brushing-05",
+        "teeth-brushing",
+        5,
+        "",
+        "Gently brush your tongue. Finish the full two minutes before marking this session complete.",
+        "",
+        "",
+        true
+      ],
+      [
+        "teeth-brushing-06",
+        "teeth-brushing",
+        6,
+        "",
+        "Spit out the toothpaste, rinse your brush, and let it air-dry upright.",
+        "",
+        "",
+        true
+      ]
+    ],
+    "WorkoutTemplates": [
+      [
+        "andrew-teeth-morning",
+        "Morning teeth brushing",
+        "Andrew's daily morning brushing session.",
+        "daily habit",
+        2,
+        true,
+        "2026-10-07",
+        "2026-10-07"
+      ],
+      [
+        "andrew-teeth-evening",
+        "Evening teeth brushing",
+        "Andrew's daily bedtime brushing session.",
+        "daily habit",
+        2,
+        true,
+        "2026-10-07",
+        "2026-10-07"
+      ]
+    ],
+    "WorkoutTemplateItems": [
+      [
+        "ATB-AM-001",
+        "andrew-teeth-morning",
+        1,
+        "teeth-brushing",
+        "Brush teeth",
+        "",
+        "",
+        120,
+        "",
+        "2 minutes · Morning",
+        true
+      ],
+      [
+        "ATB-PM-001",
+        "andrew-teeth-evening",
+        1,
+        "teeth-brushing",
+        "Brush teeth",
+        "",
+        "",
+        120,
+        "",
+        "2 minutes · Before bed",
+        true
+      ]
+    ]
+  }
+}

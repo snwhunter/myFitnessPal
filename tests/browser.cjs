@@ -1,6 +1,7 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const brushing=require('../data/andrew-teeth-brushing.json');
 const seed=require('../data/andrew-ankle-rehab.json');
 const output=process.env.BROWSER_ARTIFACTS || '/tmp/myfitnesspal-browser';
 fs.mkdirSync(output,{recursive:true});
@@ -23,6 +24,13 @@ fs.mkdirSync(output,{recursive:true});
    else if(action==='createSession') {
      const id=`session-${++nextId}`;
      data={session_id:id,session_date:body.session_date,template_id:body.template_id,status:'scheduled',items:seed.activities.map(a=>({session_item_id:`${id}-${a.activity_id}`,title:a.title,completed:false,prescription:{notes:a.prescription},exercise:{summary:a.purpose,notes:a.notes},thumbnail_url:a.thumbnail,steps:a.steps.map((instruction,i)=>({instruction,image_url:a.images[i]?.src}))}))};
+     if(body.template_id.startsWith('andrew-teeth-')) data.items=[{
+       session_item_id:`${id}-teeth`,title:'Brush teeth',completed:false,
+       prescription:{notes:'2 minutes',duration_sec:120},
+       exercise:{category:'oral hygiene',summary:'Brush morning and evening.'},
+       thumbnail_url:'assets/exercises/teeth-brushing.svg',
+       steps:brushing.rows.ExerciseSteps.map(row=>({instruction:row[4],image_url:row[5]}))
+     }];
      sessions.push(data);
    } else if(action==='startSession') {
      await new Promise(resolve=>releaseStart=resolve);
@@ -39,8 +47,8 @@ fs.mkdirSync(output,{recursive:true});
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://localhost:8765/?user=andrew.hunter');
  await page.locator('.session-card').first().waitFor();
- assert.equal(await page.locator('.session-card').count(),2,'Cards render while history request is pending');
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.4');
+ assert.equal(await page.locator('.session-card').count(),4,'Cards render while history request is pending');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.5');
  assert.equal(await page.locator('#backendVersion').innerText(),'Backend: 0.3.3');
  await page.locator('#callLogPanel summary').click();
  assert.ok((await page.locator('#callLogRows').innerText()).includes('pending'));
@@ -64,7 +72,7 @@ fs.mkdirSync(output,{recursive:true});
  releaseHistory();
  await page.locator('#backButton').click();
  assert.equal(calls.filter(a=>a==='dashboard').length,1,'Back reuses current session data');
- await page.waitForFunction(()=>document.querySelector('#todayExercises').textContent==='1 / 14');
+ await page.waitForFunction(()=>document.querySelector('#todayExercises').textContent==='1 / 16');
  await page.locator('[data-session="2"]').click();
  assert.equal(await page.locator('.check').first().isChecked(),true);
  await page.locator('#backButton').click();
@@ -86,7 +94,7 @@ fs.mkdirSync(output,{recursive:true});
    await page.waitForFunction(()=>![...document.querySelectorAll('.check')].some(i=>i.disabled));
  }
  await page.locator('#backButton').click();
- await page.waitForFunction(()=>document.querySelector('#weekSessions').textContent==='1 / 14');
+ await page.waitForFunction(()=>document.querySelector('#weekSessions').textContent==='1 / 28');
  assert.equal(await page.locator('.session-card.complete').count(),1);
  let releaseDashboard;
  dashboardGate=new Promise(resolve=>releaseDashboard=resolve);
@@ -99,12 +107,40 @@ fs.mkdirSync(output,{recursive:true});
  releaseDashboard(); dashboardGate=null;
  await page.waitForFunction(()=>!document.querySelector('.check').disabled);
  await page.locator('#backButton').click();
- assert.equal(await page.locator('#appVersion').innerText(),'v0.3.4');
+ assert.equal(await page.locator('#appVersion').innerText(),'v0.3.5');
  const logs=await page.evaluate(()=>window.myFitnessPalLog.entries());
  assert(logs.some(e=>e.action==='checkItem'&&e.outcome==='success'&&e.durationMs>=0));
- assert(logs.every(e=>e.startedAt&&e.version==='0.3.4'));
+ assert(logs.every(e=>e.startedAt&&e.version==='0.3.5'));
  assert(logs.filter(e=>e.outcome!=='pending').every(e=>e.finishedAt));
  assert(logs.filter(e=>e.outcome==='success').every(e=>e.responseReceivedMs>=0));
+ const beforeBrushing=sessions.length;
+ await page.locator('[data-session="4"]').click();
+ await page.locator('.item').first().waitFor();
+ await page.waitForFunction(()=>document.querySelector('.check').disabled);
+ assert.equal(sessions.length,beforeBrushing+1,'Evening creates only its own session');
+ assert.equal(sessions.at(-1).template_id,'andrew-teeth-evening');
+ assert.equal(await page.locator('.item').count(),1);
+ await page.locator('.exercise summary').click();
+ assert.ok((await page.locator('.detail').innerText()).includes('45 degrees'));
+ await page.locator('.detail-image').evaluate(img=>img.decode());
+ releaseStart();
+ await page.waitForFunction(()=>!document.querySelector('.check').disabled);
+ await page.locator('.check').check();
+ await page.waitForFunction(()=>document.querySelector('#count').textContent==='1 / 1 complete');
+ await page.screenshot({path:output+'/brushing-mobile.png'});
+ await page.locator('#backButton').click();
+ assert.ok((await page.locator('[data-session="4"]').innerText()).includes('Complete'));
+ assert.ok((await page.locator('[data-session="3"]').innerText()).includes('Start'));
+ await page.locator('[data-session="3"]').click();
+ await page.locator('.item').first().waitFor();
+ await page.waitForFunction(()=>document.querySelector('.check').disabled);
+ releaseStart();
+ await page.waitForFunction(()=>!document.querySelector('.check').disabled);
+ assert.equal(await page.locator('.check').isChecked(),false,'Morning progress is independent of evening and rehab');
+ await page.locator('#backButton').click();
+ await page.reload();
+ await page.locator('[data-session="4"]').waitFor();
+ assert.ok((await page.locator('[data-session="4"]').innerText()).includes('Complete'),'Brushing persists on reload');
  await page.locator('#callLogPanel summary').click();
  assert.ok((await page.locator('#callLogRows').innerText()).includes('success'));
  await page.locator('#callLogPanel summary').click();
@@ -119,3 +155,4 @@ fs.mkdirSync(output,{recursive:true});
  console.log('PASS: delayed metrics/start, request counts, Google-backed persistence, completion/date isolation, local success/failure logs, visible version, mobile/desktop layout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});
+

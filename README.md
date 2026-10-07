@@ -11,3 +11,6 @@ Completion is stored in the browser independently by user, workout, local calend
 Existing session links work with `?user=andrew.hunter&date=2026-10-03&session=1`. Omit `date` to use the device's current local date, and omit `session` to open the dashboard. Unknown users see a user-selection prompt.
 
 For local development, serve this directory with `python3 -m http.server 8765`. Run state and data checks with `TZ=America/Los_Angeles node --test tests/*.test.mjs`. Pushes to `main` trigger the GitHub Pages workflow.
+
+
+Andrew also has separate daily morning and evening teeth-brushing sessions (slots 3 and 4). Each has one completion checkbox, a two-minute target, and expandable ADA-based instructions with an original SVG illustration. Definitions are in `data/andrew-teeth-brushing.json` and the live Google Sheets backend. Existing rehab session links keep slots 1 and 2.
